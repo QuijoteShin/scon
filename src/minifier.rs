@@ -1,0 +1,168 @@
+// scon/src/minifier.rs
+// SCON Minifier — minify/expand
+
+pub struct Minifier;
+
+impl Minifier {
+    // Minify SCON to single line
+    // ; = newline, ;; = dedent 1, ;;; = dedent 2, etc.
+    pub fn minify(scon: &str) -> String {
+        let mut result = String::with_capacity(scon.len());
+        let mut prev_depth: isize = 0;
+        let mut is_first = true;
+
+        // Auto-detect indent
+        let indent = Self::detect_indent(scon);
+
+        for line in scon.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                if trimmed.starts_with("#!scon/") {
+                    result.push_str(trimmed);
+                    result.push(';');
+                }
+                continue;
+            }
+
+            let depth = Self::calculate_depth(line, indent) as isize;
+
+            if !is_first {
+                let diff = prev_depth - depth;
+                if diff >= 2 {
+                    for _ in 0..=(diff as usize) {
+                        result.push(';');
+                    }
+                } else if diff == 1 {
+                    result.push_str(";;");
+                } else {
+                    result.push(';');
+                }
+            }
+
+            result.push_str(trimmed);
+            prev_depth = depth;
+
+            // Scope openers
+            if trimmed.ends_with(':') {
+                prev_depth = depth + 1;
+            }
+            // List items
+            if trimmed.starts_with("- ") {
+                prev_depth = depth + 1;
+            }
+
+            is_first = false;
+        }
+
+        result
+    }
+
+    // Expand minified SCON to indented format
+    pub fn expand(minified: &str, indent: usize) -> String {
+        let mut lines = Vec::new();
+        let mut depth: usize = 0;
+        let mut buffer = String::new();
+        let mut in_quotes = false;
+        let bytes = minified.as_bytes();
+        let len = bytes.len();
+
+        let mut i = 0;
+        while i < len {
+            let c = bytes[i];
+
+            // Handle escape in quotes
+            if c == b'\\' && in_quotes && i + 1 < len {
+                buffer.push(c as char);
+                buffer.push(bytes[i + 1] as char);
+                i += 2;
+                continue;
+            }
+
+            if c == b'"' {
+                in_quotes = !in_quotes;
+                buffer.push('"');
+                i += 1;
+                continue;
+            }
+
+            if c == b';' && !in_quotes {
+                // Count consecutive semicolons
+                let mut semi_count = 1usize;
+                while i + 1 < len && bytes[i + 1] == b';' {
+                    semi_count += 1;
+                    i += 1;
+                }
+
+                // Emit current buffer
+                let trimmed = buffer.trim().to_string();
+                if !trimmed.is_empty() {
+                    let mut line = String::new();
+                    for _ in 0..(indent * depth) {
+                        line.push(' ');
+                    }
+                    line.push_str(&trimmed);
+                    lines.push(line);
+
+                    // Scope openers
+                    if trimmed.ends_with(':') && !Self::has_value_after_colon(&trimmed) {
+                        depth += 1;
+                    }
+                    // List items
+                    if trimmed.starts_with("- ") {
+                        depth += 1;
+                    }
+                }
+
+                buffer.clear();
+
+                // Apply dedent
+                if semi_count >= 2 {
+                    depth = depth.saturating_sub(semi_count - 1);
+                }
+
+                i += 1;
+                continue;
+            }
+
+            buffer.push(c as char);
+            i += 1;
+        }
+
+        // Last buffer
+        let trimmed = buffer.trim().to_string();
+        if !trimmed.is_empty() {
+            let mut line = String::new();
+            for _ in 0..(indent * depth) {
+                line.push(' ');
+            }
+            line.push_str(&trimmed);
+            lines.push(line);
+        }
+
+        lines.join("\n")
+    }
+
+    fn has_value_after_colon(s: &str) -> bool {
+        if let Some(colon_pos) = s.rfind(':') {
+            let after = s[colon_pos + 1..].trim();
+            !after.is_empty()
+        } else {
+            false
+        }
+    }
+
+    fn detect_indent(scon: &str) -> usize {
+        for line in scon.lines() {
+            let spaces = line.len() - line.trim_start_matches(' ').len();
+            if spaces > 0 && !line.trim().is_empty() && !line.trim().starts_with('#') {
+                return spaces;
+            }
+        }
+        1
+    }
+
+    fn calculate_depth(line: &str, indent: usize) -> usize {
+        let spaces = line.len() - line.trim_start_matches(' ').len();
+        if indent > 0 { spaces / indent } else { 0 }
+    }
+}
