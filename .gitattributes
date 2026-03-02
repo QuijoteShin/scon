@@ -1,0 +1,28 @@
+# .gitattributes
+# Force LF on all text files regardless of OS
+* text=auto eol=lf
+
+# Ensure these are always LF
+*.php text eol=lf
+*.rs text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.md text eol=lf
+*.sh text eol=lf
+*.sql text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.lock text eol=lf
+
+# Binary files - don't touch
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
