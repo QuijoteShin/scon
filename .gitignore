@@ -11,3 +11,4 @@ node_modules/
 
 # Bench results (regenerable)
 bench/datasets/*.json
+package-lock.json
