@@ -1,0 +1,21 @@
+{
+  "name": "scon",
+  "version": "0.1.0",
+  "description": "SCON — Schema-Compact Object Notation",
+  "type": "module",
+  "main": "js/scon.js",
+  "scripts": {
+    "bench": "node --expose-gc bench/bench.mjs",
+    "bench:php": "php bench/bench.php",
+    "bench:php:10mb": "php bench/bench_10mb.php",
+    "bench:rust": "./target/release/scon-bench"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/QuijoteShin/scon.git"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "hash-wasm": "^4.11.0"
+  }
+}
