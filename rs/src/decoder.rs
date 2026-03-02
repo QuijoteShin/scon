@@ -150,7 +150,7 @@ impl Decoder {
         Ok(result)
     }
 
-    fn decode_key_value(&self, line: &ParsedLine, lines: &[ParsedLine], index: usize, base_depth: usize, colon_pos: usize) -> Result<(String, Value, usize), String> {
+    fn decode_key_value(&self, line: &ParsedLine, lines: &[ParsedLine], index: usize, base_depth: usize, _colon_pos: usize) -> Result<(String, Value, usize), String> {
         let content = &line.content;
         let (key, key_end) = self.parse_key(content)?;
         let rest = content[key_end..].trim();

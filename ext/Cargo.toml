@@ -1,0 +1,13 @@
+# ext/Cargo.toml — SCON PHP extension via ext-php-rs
+[package]
+name = "scon-php"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+scon-core = { path = "../rs" }
+ext-php-rs = "0.13"
+indexmap = "2"

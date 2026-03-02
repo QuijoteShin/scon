@@ -1,20 +1,7 @@
-# scon/Cargo.toml
-[package]
-name = "scon"
-version = "0.1.0"
-edition = "2021"
-description = "SCON — Schema-Compact Object Notation"
-
-[dependencies]
-indexmap = "2"
-xxhash-rust = { version = "0.8", features = ["xxh3"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-
-[[bin]]
-name = "scon-bench"
-path = "src/bin/bench.rs"
-required-features = []
+# Cargo.toml — workspace root
+[workspace]
+members = ["rs", "ext"]
+resolver = "2"
 
 [profile.release]
 opt-level = 3

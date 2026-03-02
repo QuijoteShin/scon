@@ -93,7 +93,6 @@ impl fmt::Display for Value {
 }
 
 // Conversion from serde_json::Value (for benchmarks)
-#[cfg(feature = "json-compat")]
 impl From<&serde_json::Value> for Value {
     fn from(v: &serde_json::Value) -> Self {
         json_to_scon(v)

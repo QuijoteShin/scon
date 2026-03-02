@@ -5,14 +5,12 @@
 
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::io::Read;
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 // Direct imports from workspace
-use scon::value::{json_to_scon, scon_to_json};
-use scon::{Encoder, Decoder, Minifier, Value};
-use indexmap::IndexMap;
+use scon_core::value::json_to_scon;
+use scon_core::{Encoder, Decoder, Minifier, Value};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -437,7 +435,7 @@ fn generate_datasets() -> Vec<(String, String, serde_json::Value, Value)> {
     datasets
 }
 
-fn print_summary(datasets: &[(String, String, serde_json::Value, Value)]) {
+fn print_summary(_datasets: &[(String, String, serde_json::Value, Value)]) {
     println!("╔══════════════════════════════════════════════════════════════════════════════╗");
     println!("║  CROSS-LANGUAGE COMPARISON                                                  ║");
     println!("╚══════════════════════════════════════════════════════════════════════════════╝");
@@ -479,6 +477,22 @@ fn stats_json(sorted: &[f64]) -> serde_json::Value {
     })
 }
 
+// Civil date from days since Unix epoch (no external crate needed)
+fn epoch_days_to_ymd(days: i64) -> (i32, u32, u32) {
+    // Algorithm from http://howardhinnant.github.io/date_algorithms.html
+    let z = days + 719468;
+    let era = (if z >= 0 { z } else { z - 146096 }) / 146097;
+    let doe = (z - era * 146097) as u32;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y as i32, m, d)
+}
+
 fn save_results(results: &[serde_json::Value], iters: usize) {
     // Find bench/datasets relative to the binary or use cwd
     let out_dir = Path::new("bench/datasets");
@@ -487,12 +501,15 @@ fn save_results(results: &[serde_json::Value], iters: usize) {
     }
 
     let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-    // Format as YYYYMMDD_HHMMSS
-    let secs_in_day = ts % 86400;
-    let days = ts / 86400;
-    // Approximate date (good enough for filename)
-    let year = 1970 + (days * 400 / 146097); // rough
-    let ts_str = format!("{}_{:06}", ts / 86400, secs_in_day);
+    // YYYYMMDD_HHMMSS from epoch
+    let secs = ts as i64;
+    let days_since_epoch = secs / 86400;
+    let time_of_day = (secs % 86400) as u32;
+    let (year, month, day) = epoch_days_to_ymd(days_since_epoch);
+    let hour = time_of_day / 3600;
+    let min = (time_of_day % 3600) / 60;
+    let sec = time_of_day % 60;
+    let ts_str = format!("{:04}{:02}{:02}_{:02}{:02}{:02}", year, month, day, hour, min, sec);
 
     let hostname = std::env::var("HOSTNAME")
         .or_else(|_| std::env::var("COMPUTERNAME"))
@@ -503,14 +520,14 @@ fn save_results(results: &[serde_json::Value], iters: usize) {
             "lang": "rust",
             "suite": "standard",
             "iterations": iters,
-            "date": format!("{}", ts),
+            "date": &ts_str,
             "timestamp": ts,
             "hostname": hostname,
         },
         "results": results,
     });
 
-    let filename = format!("rust_{}.json", ts);
+    let filename = format!("rust_{}.json", ts_str);
     let out_path = out_dir.join(&filename);
     match fs::write(&out_path, serde_json::to_string_pretty(&output).unwrap()) {
         Ok(_) => println!("\nJSON results saved to: {}", out_path.display()),
