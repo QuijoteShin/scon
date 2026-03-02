@@ -1,0 +1,13 @@
+# Rust
+/target/
+Cargo.lock
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+*.swp
+
+# Bench results (regenerable)
+bench/datasets/*.json
