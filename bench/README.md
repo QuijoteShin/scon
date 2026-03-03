@@ -149,8 +149,11 @@ Each entry documents a change, its algorithmic impact, and measured result.
 | P8 | Scratch buffer for unescape (capacity reuse) | Amortized O(1) alloc vs O(N) fresh allocations | Combined with P7 |
 | P9 | Manual integer parser (byte accumulator) | O(digits) unchecked vs stdlib `FromStr` + `Result` overhead | ~neutral on string-heavy data |
 | P10 | Depth-skip elimination: child returns `next_index` | O(N) total vs O(N×D) re-scanning | ~5% decode, architecturally correct |
+| P11 | `memchr3(b':', b'"', b'{')` single-pass colon search | O(L/16) single SIMD pass vs 3 sequential scans | ~neutral (lines are short), cleaner code |
 
 **Complexity note on P10:** Before the fix, when `decode_object` called a child recursively, the child processed N lines, then the parent re-scanned the same N lines to find the next sibling (`while depth > base_depth { i++ }`). At depth D, the same line could be scanned D times — O(N×D) total. With the fix, each line is visited exactly once — O(N).
+
+**Complexity note on P11:** `find_key_colon` previously did `memchr(b':')` then `prefix.contains(b'"')` + `prefix.contains(b'{')` — three O(L) passes over the same memory. `memchr3` finds the first occurrence of any of the three bytes in a single SIMD pass — O(L/16) with 128-bit vectors. Impact is minimal because SCON lines average ~30 bytes (below SIMD amortization threshold), but eliminates redundant memory reads.
 
 ### Key takeaways
 

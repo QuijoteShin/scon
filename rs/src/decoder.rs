@@ -520,23 +520,23 @@ impl Decoder {
         }
     }
 
-    // P7: memchr SIMD fast-path — threshold 20 bytes (bajo ese largo, scan manual es más rápido)
+    // memchr3 SIMD — un solo pase vectorizado busca ':', '"', '{' simultáneamente
+    // Antes: memchr(:) + contains(") + contains({) = 3 escaneos sobre el mismo prefijo
     fn find_key_colon(&self, s: &str) -> Option<usize> {
         let bytes = s.as_bytes();
 
-        if bytes.len() >= 20 {
-            // SIMD path: buscar ':'. Si no hay '"' ni '{' antes, es el colon del key
-            if let Some(colon) = memchr(b':', bytes) {
-                let prefix = &bytes[..colon];
-                if !prefix.contains(&b'"') && !prefix.contains(&b'{') {
-                    return Some(colon);
-                }
-            } else {
-                return None;
+        // SIMD fast-path: memchr3 encuentra el primer ':', '"' o '{' en un solo pase
+        if let Some(pos) = memchr::memchr3(b':', b'"', b'{', bytes) {
+            // Si es ':' directo, es el key colon (caso común ~95% de líneas)
+            if bytes[pos] == b':' {
+                return Some(pos);
             }
+            // Tiene '"' o '{' antes del ':' → fallback al scan manual desde pos
+        } else {
+            return None; // sin ':' en toda la línea
         }
 
-        // Scan manual para strings cortos o con quotes/braces
+        // Scan manual solo cuando hay quotes/braces (caso raro)
         let mut in_quotes = false;
         let mut brace_depth = 0i32;
         let mut i = 0;
