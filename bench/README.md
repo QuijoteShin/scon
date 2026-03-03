@@ -110,17 +110,33 @@ The fairest comparison — both serde_json and SCON are compiled Rust:
 
 | Dataset | serde_json enc | SCON enc | Ratio | serde_json dec | SCON dec | Ratio |
 |---------|---------------:|---------:|------:|---------------:|---------:|------:|
+| OpenAPI Specs | 0.057 ms | 0.057 ms | **1.0x** | 0.253 ms | 0.564 ms | 2.2x |
+| Config Records | 0.060 ms | 0.065 ms | 1.1x | 0.334 ms | 0.747 ms | 2.2x |
+| DB Exports | 0.015 ms | 0.029 ms | 1.9x | 0.064 ms | 0.148 ms | 2.3x |
+
+SCON encoding has reached **parity with serde_json** on OpenAPI (968 MB/s vs 825 MB/s). Decoding is 2.2–2.3x slower — the remaining gap is architectural: serde_json uses single-pass recursive descent with manual byte-level number parsing and a scratch buffer for zero-copy string unescaping. See the paper for detailed overhead attribution.
+
+### Paper publication baseline
+
+The table above reflects optimizations completed post-publication. The pre-optimization baseline used for the paper is preserved in:
+
+```
+bench/datasets/rust_p0_baseline_20260303_195334.json
+```
+
+| Dataset | serde_json enc | SCON enc | Ratio | serde_json dec | SCON dec | Ratio |
+|---------|---------------:|---------:|------:|---------------:|---------:|------:|
 | OpenAPI Specs | 0.061 ms | 0.099 ms | 1.6x | 0.343 ms | 0.953 ms | 2.8x |
 | Config Records | 0.087 ms | 0.187 ms | 2.2x | 0.457 ms | 1.130 ms | 2.5x |
 | DB Exports | 0.022 ms | 0.075 ms | 3.4x | 0.091 ms | 0.312 ms | 3.4x |
 
-SCON encoding is 1.6–3.4x slower; decoding 2.5–3.4x slower in this early-stage implementation. The gap is dominated by avoidable allocations (unconditional input cloning, per-line string copies) rather than fundamental format complexity. See the paper for a detailed overhead attribution.
+Final optimized benchmark: `bench/datasets/rust_p3_all_final_20260303_222358.json`
 
 ### Key takeaways
 
 1. **SCON's strength is payload size, not speed.** On tabular data, SCON(min) is 29% smaller than JSON without compression. With dedup, up to 66% smaller.
 
-2. **The speed gap reflects implementation maturity.** The 2.5–3.4x Rust-vs-Rust ratio is dominated by avoidable allocations in the v0.x reference decoder (input cloning, per-line string copies, field name duplication in tabular arrays). Significant optimization headroom remains.
+2. **The speed gap reflects implementation maturity.** Encoding has reached parity (1.0x on OpenAPI). The 2.2x decode ratio is architectural: SCON uses two-pass parsing (line classification + semantic interpretation) vs serde_json's single-pass recursive descent with manual number parsing and scratch buffer reuse.
 
 3. **SCON is readable AND smaller.** JSON needs pretty-print to be human-readable (3.8x size increase). SCON's standard format is readable with only 17% overhead vs JSON minified.
 

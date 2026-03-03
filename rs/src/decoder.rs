@@ -1,9 +1,8 @@
 // scon/src/decoder.rs
 // SCON Decoder — SCON string → Value
 
-use crate::minifier::Minifier;
-use crate::value::Value;
-use indexmap::IndexMap;
+use crate::value::{Value, SconMap};
+use memchr::memchr;
 
 pub struct Decoder {
     indent: usize,
@@ -22,14 +21,11 @@ impl Decoder {
     }
 
     pub fn decode(&mut self, input: &str) -> Result<Value, String> {
-        //Avoid unconditional clone - only allocate if minified input needs expansion
-        let expanded;
-        let scon: &str = if self.is_minified(input) {
-            expanded = Minifier::expand(input, self.indent);
-            &expanded
-        } else {
-            input
-        };
+        // P8: Decode minificado directo — evita materializar string expandido (~30% min-decode)
+        if self.is_minified(input) {
+            return self.decode_minified(input);
+        }
+        let scon: &str = input;
 
         //Auto-detect indent
         if self.indent_auto_detect {
@@ -55,18 +51,22 @@ impl Decoder {
             }
         }
 
-        //Parse lines — zero-copy: content borrows from scon
-        let mut parsed: Vec<ParsedLine<'_>> = Vec::new();
+        // Pre-alloc estimado — evita re-allocations del Vec durante parsing
+        let line_estimate = scon.as_bytes().iter().filter(|&&b| b == b'\n').count() + 1;
+        let mut parsed: Vec<ParsedLine<'_>> = Vec::with_capacity(line_estimate);
+        let indent = self.indent;
         for (line_num, line) in scon.lines().enumerate() {
             let trimmed = line.trim();
-            if trimmed.is_empty() || trimmed.starts_with('#') {
-                continue;
-            }
-            //Skip directives and schema defs (not implemented yet)
-            if trimmed.starts_with("@@") || trimmed.starts_with("s:") || trimmed.starts_with("r:") || trimmed.starts_with("sec:") || trimmed.starts_with("@use ") {
-                continue;
-            }
-            let depth = self.calculate_depth(line);
+            if trimmed.is_empty() { continue; }
+            let first_byte = trimmed.as_bytes()[0];
+            // Skip comments and directives — byte check antes de string compare
+            if first_byte == b'#' { continue; }
+            if first_byte == b'@' && (trimmed.starts_with("@@") || trimmed.starts_with("@use ")) { continue; }
+            if first_byte == b's' && trimmed.starts_with("s:") { continue; }
+            if first_byte == b'r' && trimmed.starts_with("r:") { continue; }
+            if trimmed.starts_with("sec:") { continue; }
+            let spaces = line.len() - line.trim_start_matches(' ').len();
+            let depth = if indent > 0 { spaces / indent } else { 0 };
             parsed.push(ParsedLine {
                 depth,
                 content: trimmed,
@@ -75,14 +75,14 @@ impl Decoder {
         }
 
         if parsed.is_empty() {
-            return Ok(Value::Object(IndexMap::new()));
+            return Ok(Value::Object(SconMap::default()));
         }
 
         let first = &parsed[0];
 
         //Empty object
         if parsed.len() == 1 && first.content == "{}" {
-            return Ok(Value::Object(IndexMap::new()));
+            return Ok(Value::Object(SconMap::default()));
         }
 
         //Array header at root
@@ -101,9 +101,105 @@ impl Decoder {
         self.decode_object(0, &parsed, 0).map(|obj| Value::Object(obj))
     }
 
-    fn calculate_depth(&self, line: &str) -> usize {
-        let spaces = line.len() - line.trim_start_matches(' ').len();
-        if self.indent > 0 { spaces / self.indent } else { 0 }
+    // P8: Parsea minified SCON directamente — `;` = newline, `;;` = dedent 1, `;;;` = dedent 2
+    // Evita Minifier::expand() que materializa un String completo antes de parsear
+    fn decode_minified(&mut self, input: &str) -> Result<Value, String> {
+        // Estimar segmentos por conteo de ';'
+        let seg_estimate = input.as_bytes().iter().filter(|&&b| b == b';').count() + 1;
+        let mut parsed: Vec<ParsedLine<'_>> = Vec::with_capacity(seg_estimate);
+        let mut depth: usize = 0;
+        let bytes = input.as_bytes();
+        let mut seg_start = 0;
+        let mut in_quotes = false;
+        let mut line_num = 0;
+
+        let mut i = 0;
+        while i < bytes.len() {
+            let c = bytes[i];
+
+            if c == b'\\' && in_quotes && i + 1 < bytes.len() {
+                i += 2;
+                continue;
+            }
+            if c == b'"' {
+                in_quotes = !in_quotes;
+                i += 1;
+                continue;
+            }
+
+            if c == b';' && !in_quotes {
+                let mut semi_count = 1usize;
+                while i + 1 < bytes.len() && bytes[i + 1] == b';' {
+                    semi_count += 1;
+                    i += 1;
+                }
+
+                let segment = input[seg_start..i - semi_count + 1].trim();
+                if !segment.is_empty() && !segment.starts_with('#') {
+                    if !(segment.starts_with("@@") || segment.starts_with("s:") || segment.starts_with("r:") || segment.starts_with("sec:") || segment.starts_with("@use ")) {
+                        parsed.push(ParsedLine { depth, content: segment, _line_num: line_num });
+                        line_num += 1;
+
+                        // Scope openers: key: → depth+1
+                        if segment.ends_with(':') && !self.has_inline_value_after_colon(segment) {
+                            depth += 1;
+                        }
+                        // List items: "- " → depth+1
+                        if segment.starts_with("- ") {
+                            depth += 1;
+                        }
+                    }
+                }
+
+                // Dedent por semicolons múltiples
+                if semi_count >= 2 {
+                    depth = depth.saturating_sub(semi_count - 1);
+                }
+
+                seg_start = i + 1;
+                i += 1;
+                continue;
+            }
+
+            i += 1;
+        }
+
+        // Último segmento
+        let segment = input[seg_start..].trim();
+        if !segment.is_empty() && !segment.starts_with('#') {
+            if !(segment.starts_with("@@") || segment.starts_with("s:") || segment.starts_with("r:") || segment.starts_with("sec:") || segment.starts_with("@use ")) {
+                parsed.push(ParsedLine { depth, content: segment, _line_num: line_num });
+            }
+        }
+
+        if parsed.is_empty() {
+            return Ok(Value::Object(SconMap::default()));
+        }
+
+        let first = &parsed[0];
+        if parsed.len() == 1 && first.content == "{}" {
+            return Ok(Value::Object(SconMap::default()));
+        }
+        if let Some(header) = self.try_array_header(first.content) {
+            if header.key.is_none() {
+                return self.decode_array_from_header(0, &parsed, &header);
+            }
+        }
+        if parsed.len() == 1 && !first.content.contains(':') {
+            return Ok(self.parse_primitive(first.content));
+        }
+
+        self.decode_object(0, &parsed, 0).map(|obj| Value::Object(obj))
+    }
+
+    // Helper para decode_minified: determina si una línea tiene valor inline después del colon
+    fn has_inline_value_after_colon(&self, s: &str) -> bool {
+        if let Some(colon_pos) = self.find_key_colon(s) {
+            let after = s[colon_pos + 1..].trim();
+            !after.is_empty()
+        } else {
+            false
+        }
     }
 
     fn is_minified(&self, s: &str) -> bool {
@@ -112,8 +208,8 @@ impl Decoder {
 
     // --- Object decoding ---
 
-    fn decode_object(&self, base_depth: usize, lines: &[ParsedLine<'_>], start: usize) -> Result<IndexMap<String, Value>, String> {
-        let mut result = IndexMap::new();
+    fn decode_object(&self, base_depth: usize, lines: &[ParsedLine<'_>], start: usize) -> Result<SconMap<String, Value>, String> {
+        let mut result = SconMap::default();
         let mut i = start;
 
         while i < lines.len() {
@@ -125,9 +221,9 @@ impl Decoder {
 
             //P1.4: Try parse_array_header directly — single pass instead of is+parse
             if let Some(header) = self.try_array_header(content) {
-                if let Some(ref key) = header.key {
+                if let Some(key) = header.key {
                     let val = self.decode_array_from_header(i, lines, &header)?;
-                    result.insert(key.clone(), val);
+                    result.insert(key.to_string(), val);
                     i += 1;
                     while i < lines.len() && lines[i].depth > base_depth { i += 1; }
                     continue;
@@ -148,9 +244,15 @@ impl Decoder {
         Ok(result)
     }
 
-    fn decode_key_value(&self, line: &ParsedLine<'_>, lines: &[ParsedLine<'_>], index: usize, base_depth: usize, _colon_pos: usize) -> Result<(String, Value, usize), String> {
+    // P5: colon_pos ya viene de find_key_colon — evita re-escanear en parse_key
+    fn decode_key_value(&self, line: &ParsedLine<'_>, lines: &[ParsedLine<'_>], index: usize, base_depth: usize, colon_pos: usize) -> Result<(String, Value, usize), String> {
         let content = line.content;
-        let (key, key_end) = self.parse_key(content)?;
+        let (key, key_end) = if content.as_bytes()[0] == b'"' {
+            self.parse_key(content)?
+        } else {
+            // Fast path: colon_pos ya conocido, no re-escanear
+            (content[..colon_pos].trim().to_string(), colon_pos + 1)
+        };
         let rest = content[key_end..].trim();
 
         if !rest.is_empty() {
@@ -189,12 +291,12 @@ impl Decoder {
         }
 
         //Empty nested (key: with nothing after)
-        Ok((key, Value::Object(IndexMap::new()), index + 1))
+        Ok((key, Value::Object(SconMap::default()), index + 1))
     }
 
     // --- Array decoding ---
 
-    fn decode_array_from_header(&self, index: usize, lines: &[ParsedLine<'_>], header: &ArrayHeader) -> Result<Value, String> {
+    fn decode_array_from_header(&self, index: usize, lines: &[ParsedLine<'_>], header: &ArrayHeader<'_>) -> Result<Value, String> {
         if header.length == 0 {
             return Ok(Value::Array(vec![]));
         }
@@ -216,17 +318,20 @@ impl Decoder {
         self.decode_expanded_array(index, lines, header.length)
     }
 
-    fn decode_tabular_array(&self, header_idx: usize, lines: &[ParsedLine<'_>], expected: usize, fields: &[String], delimiter: char) -> Result<Value, String> {
+    fn decode_tabular_array(&self, header_idx: usize, lines: &[ParsedLine<'_>], expected: usize, fields: &[&str], delimiter: char) -> Result<Value, String> {
         let base_depth = lines[header_idx].depth;
         let mut result = Vec::with_capacity(expected);
         let mut i = header_idx + 1;
 
         while i < lines.len() && result.len() < expected {
             if lines[i].depth != base_depth + 1 { break; }
-            let values = self.parse_delimited_values(lines[i].content, delimiter);
-            let mut row = IndexMap::new();
-            for (j, field) in fields.iter().enumerate() {
-                row.insert(field.clone(), values.get(j).cloned().unwrap_or(Value::Null));
+            let mut values = self.parse_delimited_values(lines[i].content, delimiter);
+            // Pre-pad con Null si faltan campos
+            values.resize(fields.len(), Value::Null);
+            let mut row = SconMap::with_capacity_and_hasher(fields.len(), ahash::RandomState::new());
+            // Consumir values sin clone — drain evita copia de cada Value
+            for (field, val) in fields.iter().zip(values.drain(..)) {
+                row.insert(field.to_string(), val);
             }
             result.push(Value::Object(row));
             i += 1;
@@ -275,17 +380,17 @@ impl Decoder {
         Ok(Value::Array(result))
     }
 
-    fn decode_list_item_object(&self, _line: &ParsedLine<'_>, lines: &[ParsedLine<'_>], index: usize, base_depth: usize) -> Result<IndexMap<String, Value>, String> {
+    fn decode_list_item_object(&self, _line: &ParsedLine<'_>, lines: &[ParsedLine<'_>], index: usize, base_depth: usize) -> Result<SconMap<String, Value>, String> {
         let item_content = &lines[index].content[2..]; // skip "- "
 
-        let mut result = IndexMap::new();
+        let mut result = SconMap::default();
         let cont_depth = base_depth + 2;
 
         //First field may be an array header (e.g., "dependencies[1]: auth")
         if let Some(header) = self.try_array_header(item_content) {
-            if let Some(ref key) = header.key {
+            if let Some(key) = header.key {
                 let val = self.decode_array_from_header(index, lines, &header)?;
-                result.insert(key.clone(), val);
+                result.insert(key.to_string(), val);
             }
         } else {
             let (key, key_end) = self.parse_key(item_content)?;
@@ -297,7 +402,7 @@ impl Decoder {
                 let obj = self.decode_object(cont_depth, lines, index + 1)?;
                 result.insert(key, Value::Object(obj));
             } else {
-                result.insert(key, Value::Object(IndexMap::new()));
+                result.insert(key, Value::Object(SconMap::default()));
             }
         }
 
@@ -311,9 +416,9 @@ impl Decoder {
 
                 //Array header in continuation
                 if let Some(header) = self.try_array_header(next.content) {
-                    if let Some(ref k) = header.key {
+                    if let Some(k) = header.key {
                         let val = self.decode_array_from_header(i, lines, &header)?;
-                        result.insert(k.clone(), val);
+                        result.insert(k.to_string(), val);
                         i += 1;
                         while i < lines.len() && lines[i].depth > cont_depth { i += 1; }
                         continue;
@@ -336,7 +441,7 @@ impl Decoder {
     // --- Parsing helpers ---
 
     //P1.4: Single-pass check+parse — replaces is_array_header + parse_array_header
-    fn try_array_header(&self, content: &str) -> Option<ArrayHeader> {
+    fn try_array_header<'a>(&self, content: &'a str) -> Option<ArrayHeader<'a>> {
         let bracket_start = content.find('[')?;
         //Quick reject: bracket must appear before first colon
         let colon_pos = content.find(':')?;
@@ -345,11 +450,17 @@ impl Decoder {
         self.parse_array_header(content)
     }
 
-    fn parse_array_header(&self, content: &str) -> Option<ArrayHeader> {
+    // Zero-alloc: retorna slices prestados del content original
+    fn parse_array_header<'a>(&self, content: &'a str) -> Option<ArrayHeader<'a>> {
         let bracket_start = content.find('[')?;
         let key = if bracket_start > 0 {
             let raw = content[..bracket_start].trim();
-            Some(self.unquote_key(raw))
+            // Fast path: la mayoría de keys no tienen quotes
+            if raw.starts_with('"') && raw.ends_with('"') && raw.len() >= 2 {
+                Some(&raw[1..raw.len() - 1])
+            } else {
+                Some(raw)
+            }
         } else {
             None
         };
@@ -368,27 +479,22 @@ impl Decoder {
 
         let length: usize = bracket_content.parse().unwrap_or(0);
 
-        //Fields {field1,field2}
+        //Fields {field1,field2} — split_top_level ya retorna &str slices
         let mut fields = None;
         let after_bracket = &content[bracket_end + 1..];
         if after_bracket.starts_with('{') {
             if let Some(brace_end) = after_bracket.find('}') {
                 let fields_str = &after_bracket[1..brace_end];
-                fields = Some(self.parse_delimited_values(fields_str, delimiter)
-                    .into_iter()
-                    .map(|v| match v {
-                        Value::String(s) => s,
-                        _ => v.to_string(),
-                    })
-                    .collect());
+                let parts = self.split_top_level(fields_str, delimiter);
+                fields = Some(parts.into_iter().map(|s| s.trim()).collect());
             }
         }
 
-        //Inline values after :
+        //Inline values after : — slice del content, no copia
         let colon_pos = content.rfind(':')?;
         let after_colon = content[colon_pos + 1..].trim();
         let inline_values = if !after_colon.is_empty() {
-            Some(after_colon.to_string())
+            Some(after_colon)
         } else {
             None
         };
@@ -412,11 +518,25 @@ impl Decoder {
         }
     }
 
+    // P7: memchr SIMD fast-path — threshold 20 bytes (bajo ese largo, scan manual es más rápido)
     fn find_key_colon(&self, s: &str) -> Option<usize> {
-        let mut in_quotes = false;
-        let mut brace_depth = 0i32;
         let bytes = s.as_bytes();
 
+        if bytes.len() >= 20 {
+            // SIMD path: buscar ':'. Si no hay '"' ni '{' antes, es el colon del key
+            if let Some(colon) = memchr(b':', bytes) {
+                let prefix = &bytes[..colon];
+                if !prefix.contains(&b'"') && !prefix.contains(&b'{') {
+                    return Some(colon);
+                }
+            } else {
+                return None;
+            }
+        }
+
+        // Scan manual para strings cortos o con quotes/braces
+        let mut in_quotes = false;
+        let mut brace_depth = 0i32;
         let mut i = 0;
         while i < bytes.len() {
             let c = bytes[i];
@@ -436,7 +556,7 @@ impl Decoder {
         let trimmed = input.trim();
         if trimmed.is_empty() { return Value::String(String::new()); }
         if trimmed == "[]" { return Value::Array(vec![]); }
-        if trimmed == "{}" { return Value::Object(IndexMap::new()); }
+        if trimmed == "{}" { return Value::Object(SconMap::default()); }
 
         //Inline object {key:val, ...}
         if trimmed.starts_with('{') {
@@ -457,8 +577,8 @@ impl Decoder {
         self.parse_primitive(trimmed)
     }
 
-    fn parse_inline_object(&self, inner: &str) -> IndexMap<String, Value> {
-        let mut result = IndexMap::new();
+    fn parse_inline_object(&self, inner: &str) -> SconMap<String, Value> {
+        let mut result = SconMap::default();
         let parts = self.split_top_level(inner, ',');
 
         for part in &parts {
@@ -483,7 +603,7 @@ impl Decoder {
         let t = token.trim();
         if t.is_empty() { return Value::String(String::new()); }
         if t == "[]" { return Value::Array(vec![]); }
-        if t == "{}" { return Value::Object(IndexMap::new()); }
+        if t == "{}" { return Value::Object(SconMap::default()); }
 
         if t.starts_with('"') {
             if let Some(close) = self.find_closing_quote(t, 0) {
@@ -495,14 +615,15 @@ impl Decoder {
         if t == "false" { return Value::Bool(false); }
         if t == "null" { return Value::Null; }
 
-        //Integer
-        if let Ok(n) = t.parse::<i64>() {
-            return Value::Integer(n);
-        }
-
-        //Float
-        if let Ok(n) = t.parse::<f64>() {
-            return Value::Float(n);
+        // Fast-path: solo intentar parse numérico si primer byte es dígito, +, -, o .
+        let first = t.as_bytes()[0];
+        if first.is_ascii_digit() || first == b'+' || first == b'-' || first == b'.' {
+            if let Ok(n) = t.parse::<i64>() {
+                return Value::Integer(n);
+            }
+            if let Ok(n) = t.parse::<f64>() {
+                return Value::Float(n);
+            }
         }
 
         Value::String(t.to_string())
@@ -517,13 +638,20 @@ impl Decoder {
         }
     }
 
+    // P7: memchr2 SIMD — salta segmentos sin escapes ni quotes
     fn find_closing_quote(&self, s: &str, start: usize) -> Option<usize> {
         let bytes = s.as_bytes();
         let mut i = start + 1;
         while i < bytes.len() {
-            if bytes[i] == b'\\' && i + 1 < bytes.len() { i += 2; continue; }
-            if bytes[i] == b'"' { return Some(i); }
-            i += 1;
+            match memchr::memchr2(b'\\', b'"', &bytes[i..]) {
+                Some(offset) => {
+                    let pos = i + offset;
+                    if bytes[pos] == b'"' { return Some(pos); }
+                    // Es backslash — saltar el escape
+                    i = pos + 2;
+                }
+                None => return None,
+            }
         }
         None
     }
@@ -659,10 +787,11 @@ struct ParsedLine<'a> {
     _line_num: usize,
 }
 
-struct ArrayHeader {
-    key: Option<String>,
+// Zero-alloc: todos los campos son slices prestados del input original
+struct ArrayHeader<'a> {
+    key: Option<&'a str>,
     length: usize,
     delimiter: char,
-    fields: Option<Vec<String>>,
-    inline_values: Option<String>,
+    fields: Option<Vec<&'a str>>,
+    inline_values: Option<&'a str>,
 }

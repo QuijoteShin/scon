@@ -1,8 +1,45 @@
 // scon/src/encoder.rs
 // SCON Encoder — Value → SCON string
 
-use crate::value::Value;
-use indexmap::IndexMap;
+use crate::value::{Value, SconMap};
+
+// Lookup tables — branch-free byte classification, vive en L1 cache (256 bytes c/u)
+// UNSAFE_VALUE[b] = true si byte b requiere quoting en un valor SCON
+const UNSAFE_VALUE: [bool; 256] = {
+    let mut t = [false; 256];
+    t[b' ' as usize] = true;
+    t[b'\t' as usize] = true;
+    t[b':' as usize] = true;
+    t[b'"' as usize] = true;
+    t[b'\\' as usize] = true;
+    t[b';' as usize] = true;
+    t[b'@' as usize] = true;
+    t[b'#' as usize] = true;
+    t[b'{' as usize] = true;
+    t[b'[' as usize] = true;
+    t[b']' as usize] = true;
+    t[b'}' as usize] = true;
+    t
+};
+
+// UNSAFE_KEY[b] = true si byte b requiere quoting en un key SCON
+const UNSAFE_KEY: [bool; 256] = {
+    let mut t = [false; 256];
+    t[b':' as usize] = true;
+    t[b'[' as usize] = true;
+    t[b']' as usize] = true;
+    t[b'{' as usize] = true;
+    t[b'}' as usize] = true;
+    t[b'"' as usize] = true;
+    t[b'\\' as usize] = true;
+    t[b' ' as usize] = true;
+    t[b'\t' as usize] = true;
+    t[b';' as usize] = true;
+    t[b'@' as usize] = true;
+    t[b'#' as usize] = true;
+    t[b',' as usize] = true;
+    t
+};
 
 // P2.3: Pre-computed spaces for write_indent
 const INDENT_SPACES: &str = "                                                                ";
@@ -52,7 +89,7 @@ impl Encoder {
         }
     }
 
-    fn encode_object(&self, obj: &IndexMap<String, Value>, depth: usize, buf: &mut String) {
+    fn encode_object(&self, obj: &SconMap<String, Value>, depth: usize, buf: &mut String) {
         let mut first = true;
         for (key, val) in obj {
             if !first { buf.push('\n'); }
@@ -151,7 +188,7 @@ impl Encoder {
                             buf.push(self.delimiter);
                             buf.push(' ');
                         }
-                        if let Some(v) = obj.get(f) {
+                        if let Some(v) = obj.get(*f) {
                             self.write_primitive(v, buf);
                         } else {
                             buf.push_str("null");
@@ -207,7 +244,7 @@ impl Encoder {
         }
     }
 
-    fn encode_object_as_list_item(&self, obj: &IndexMap<String, Value>, depth: usize, buf: &mut String) {
+    fn encode_object_as_list_item(&self, obj: &SconMap<String, Value>, depth: usize, buf: &mut String) {
         if obj.is_empty() {
             self.write_indent(depth, buf);
             buf.push_str("- ");
@@ -289,7 +326,8 @@ impl Encoder {
         }
     }
 
-    fn extract_tabular_fields(&self, arr: &[Value]) -> Option<Vec<String>> {
+    // P9: Retorna &str refs a keys del IndexMap — evita clone de strings
+    fn extract_tabular_fields<'a>(&self, arr: &'a [Value]) -> Option<Vec<&'a str>> {
         if arr.is_empty() { return None; }
 
         let first = match &arr[0] {
@@ -297,9 +335,8 @@ impl Encoder {
             _ => return None,
         };
 
-        let keys: Vec<String> = first.keys().cloned().collect();
+        let keys: Vec<&str> = first.keys().map(|k| k.as_str()).collect();
 
-        // All values must be primitive
         for v in first.values() {
             if !v.is_primitive() { return None; }
         }
@@ -309,7 +346,7 @@ impl Encoder {
                 Value::Object(obj) => {
                     if obj.len() != keys.len() { return None; }
                     for k in &keys {
-                        match obj.get(k) {
+                        match obj.get(*k) {
                             Some(v) if v.is_primitive() => {}
                             _ => return None,
                         }
@@ -399,27 +436,30 @@ impl Encoder {
         }
     }
 
-    // P3.1: Iterate bytes instead of chars — all checked chars are ASCII
+    // Lookup table — branch-free character classification, L1 cache resident (256 bytes)
+    // Bit 0 = unsafe for unquoted value, Bit 1 = unsafe for unquoted key
     fn is_safe_unquoted(&self, s: &str) -> bool {
         if s.is_empty() { return false; }
         if matches!(s, "true" | "false" | "null") { return false; }
-        // Numeric check
-        if s.parse::<i64>().is_ok() || s.parse::<f64>().is_ok() { return false; }
+        // P6: Byte check — evita parse::<i64>()/parse::<f64>() que allocan en error path
+        let first = s.as_bytes()[0];
+        if first.is_ascii_digit() || first == b'+' || first == b'-' || first == b'.' {
+            return false;
+        }
         let delim_byte = self.delimiter as u8;
         for &b in s.as_bytes() {
-            if b == delim_byte || matches!(b, b' ' | b'\t' | b':' | b'"' | b'\\' | b';' | b'@' | b'#' | b'{' | b'[' | b']' | b'}') {
+            if UNSAFE_VALUE[b as usize] || b == delim_byte {
                 return false;
             }
         }
         true
     }
 
-    // P3.1: Iterate bytes instead of chars
     fn is_valid_unquoted_key(&self, key: &str) -> bool {
         if key.is_empty() { return false; }
         if key.as_bytes()[0] == b'#' { return false; }
         for &b in key.as_bytes() {
-            if matches!(b, b':' | b'[' | b']' | b'{' | b'}' | b'"' | b'\\' | b' ' | b'\t' | b';' | b'@' | b'#' | b',') {
+            if UNSAFE_KEY[b as usize] {
                 return false;
             }
         }

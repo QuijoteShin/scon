@@ -10,4 +10,4 @@ crate-type = ["cdylib"]
 [dependencies]
 scon-core = { path = "../rs" }
 ext-php-rs = "0.13"
-indexmap = "2"
+ahash = "0.8"

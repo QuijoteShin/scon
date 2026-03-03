@@ -5,5 +5,6 @@ resolver = "2"
 
 [profile.release]
 opt-level = 3
-lto = true
+# LTO fat — sin impacto significativo vs lto=true en este proyecto (single crate dominante)
+lto = "fat"
 codegen-units = 1

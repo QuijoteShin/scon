@@ -4,6 +4,9 @@
 use indexmap::IndexMap;
 use std::fmt;
 
+// ahash en lugar de SipHash — ~10-24% más rápido en decode/encode por reducción de costo hash
+pub type SconMap<K, V> = IndexMap<K, V, ahash::RandomState>;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Null,
@@ -12,7 +15,7 @@ pub enum Value {
     Float(f64),
     String(String),
     Array(Vec<Value>),
-    Object(IndexMap<String, Value>),
+    Object(SconMap<String, Value>),
 }
 
 impl Value {
@@ -64,7 +67,7 @@ impl Value {
         }
     }
 
-    pub fn as_object(&self) -> Option<&IndexMap<String, Value>> {
+    pub fn as_object(&self) -> Option<&SconMap<String, Value>> {
         match self {
             Value::Object(o) => Some(o),
             _ => None,
@@ -117,7 +120,7 @@ pub fn json_to_scon(v: &serde_json::Value) -> Value {
             Value::Array(arr.iter().map(json_to_scon).collect())
         }
         serde_json::Value::Object(obj) => {
-            let mut map = IndexMap::with_capacity(obj.len());
+            let mut map = SconMap::with_capacity_and_hasher(obj.len(), ahash::RandomState::new());
             for (k, v) in obj {
                 map.insert(k.clone(), json_to_scon(v));
             }

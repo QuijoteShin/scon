@@ -6,7 +6,7 @@
 
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::{Zval, ZendHashTable};
-use indexmap::IndexMap;
+use scon_core::value::SconMap;
 use scon_core::Value;
 
 // ============================================================================
@@ -68,7 +68,7 @@ fn ht_to_value(ht: Option<&ZendHashTable>) -> Value {
     }
 
     // Associative array → Object
-    let mut map = IndexMap::with_capacity(ht.len());
+    let mut map = SconMap::with_capacity_and_hasher(ht.len(), ahash::RandomState::new());
     for (key, val) in ht.iter() {
         let k = match key {
             ext_php_rs::types::ArrayKey::Long(n) => n.to_string(),
