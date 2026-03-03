@@ -133,6 +133,25 @@ bench/datasets/rust_p0_baseline_20260303_195334.json
 Phase 3 benchmark: `bench/datasets/rust_p3_all_final_20260303_222358.json`
 Phase 4 benchmark (scratch buffer + fast-path unescape): `bench/datasets/rust_p4_scratch_unescape_20260303_225941.json`
 
+### Post-publication optimization log
+
+Each entry documents a change, its algorithmic impact, and measured result.
+
+| # | Optimization | Complexity change | Measured impact |
+|---|-------------|-------------------|-----------------|
+| P1 | Zero-copy `ParsedLine` (borrows from input) | O(L) alloc → O(1) per line | Baseline improvement |
+| P2 | `itoa`/`ryu` for numeric encoding | O(digits) format vs `write!` overhead | ~5% encode |
+| P3 | Lookup tables `[256]` for byte classification | O(1) branch-free vs multi-compare | OpenAPI encode reached **1.0x** parity |
+| P4 | `ArrayHeader<'a>` with borrowed slices | O(K) clone per header → O(0) | ~8% encode on tabular |
+| P5 | `ahash` replacing SipHash in IndexMap | O(1) per hash but ~2x faster constant | ~10-24% encode/decode |
+| P6 | `memchr` SIMD for delimiter search | O(L/16) SIMD vs O(L) scalar scan | ~5% decode |
+| P7 | Fast-path unescape: `memchr(b'\\')` skip | O(1) check avoids O(L) byte-by-byte for ~90% of strings | OpenAPI decode **2.2x → 1.9x** |
+| P8 | Scratch buffer for unescape (capacity reuse) | Amortized O(1) alloc vs O(N) fresh allocations | Combined with P7 |
+| P9 | Manual integer parser (byte accumulator) | O(digits) unchecked vs stdlib `FromStr` + `Result` overhead | ~neutral on string-heavy data |
+| P10 | Depth-skip elimination: child returns `next_index` | O(N) total vs O(N×D) re-scanning | ~5% decode, architecturally correct |
+
+**Complexity note on P10:** Before the fix, when `decode_object` called a child recursively, the child processed N lines, then the parent re-scanned the same N lines to find the next sibling (`while depth > base_depth { i++ }`). At depth D, the same line could be scanned D times — O(N×D) total. With the fix, each line is visited exactly once — O(N).
+
 ### Key takeaways
 
 1. **SCON's strength is payload size, not speed.** On tabular data, SCON(min) is 29% smaller than JSON without compression. With dedup, up to 66% smaller.

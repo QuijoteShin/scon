@@ -89,7 +89,7 @@ impl Decoder {
         //Array header at root
         if let Some(header) = self.try_array_header(first.content) {
             if header.key.is_none() {
-                return self.decode_array_from_header(0, &parsed, &header);
+                return self.decode_array_from_header(0, &parsed, &header).map(|(v, _)| v);
             }
         }
 
@@ -99,7 +99,7 @@ impl Decoder {
             return Ok(val);
         }
 
-        self.decode_object(0, &parsed, 0).map(|obj| Value::Object(obj))
+        self.decode_object(0, &parsed, 0).map(|(obj, _)| Value::Object(obj))
     }
 
     // P8: Parsea minified SCON directamente — `;` = newline, `;;` = dedent 1, `;;;` = dedent 2
@@ -183,14 +183,14 @@ impl Decoder {
         }
         if let Some(header) = self.try_array_header(first.content) {
             if header.key.is_none() {
-                return self.decode_array_from_header(0, &parsed, &header);
+                return self.decode_array_from_header(0, &parsed, &header).map(|(v, _)| v);
             }
         }
         if parsed.len() == 1 && !first.content.contains(':') {
             return Ok(self.parse_primitive(first.content));
         }
 
-        self.decode_object(0, &parsed, 0).map(|obj| Value::Object(obj))
+        self.decode_object(0, &parsed, 0).map(|(obj, _)| Value::Object(obj))
     }
 
     // Helper para decode_minified: determina si una línea tiene valor inline después del colon
@@ -209,7 +209,8 @@ impl Decoder {
 
     // --- Object decoding ---
 
-    fn decode_object(&mut self, base_depth: usize, lines: &[ParsedLine<'_>], start: usize) -> Result<SconMap<String, Value>, String> {
+    // Retorna (map, next_index) — elimina re-escaneo de depth-skipping en callers
+    fn decode_object(&mut self, base_depth: usize, lines: &[ParsedLine<'_>], start: usize) -> Result<(SconMap<String, Value>, usize), String> {
         let mut result = SconMap::default();
         let mut i = start;
 
@@ -223,10 +224,9 @@ impl Decoder {
             //P1.4: Try parse_array_header directly — single pass instead of is+parse
             if let Some(header) = self.try_array_header(content) {
                 if let Some(key) = header.key {
-                    let val = self.decode_array_from_header(i, lines, &header)?;
+                    let (val, next_i) = self.decode_array_from_header(i, lines, &header)?;
                     result.insert(key.to_string(), val);
-                    i += 1;
-                    while i < lines.len() && lines[i].depth > base_depth { i += 1; }
+                    i = next_i;
                     continue;
                 }
             }
@@ -242,7 +242,7 @@ impl Decoder {
             i += 1;
         }
 
-        Ok(result)
+        Ok((result, i))
     }
 
     // P5: colon_pos ya viene de find_key_colon — evita re-escanear en parse_key
@@ -274,8 +274,10 @@ impl Decoder {
                     if lines[j].depth == child_depth && lines[j].content.starts_with("- ") {
                         let item_content = &lines[j].content[2..];
                         if item_content.contains(':') {
-                            let obj = self.decode_list_item_object(&lines[j], lines, j, base_depth)?;
+                            let (obj, next_j) = self.decode_list_item_object(&lines[j], lines, j, base_depth)?;
                             items.push(Value::Object(obj));
+                            j = next_j;
+                            continue;
                         } else {
                             items.push(self.parse_inline_value(item_content));
                         }
@@ -285,9 +287,8 @@ impl Decoder {
                 return Ok((key, Value::Array(items), j));
             }
 
-            let obj = self.decode_object(base_depth + 1, lines, index + 1)?;
-            let mut next_i = index + 1;
-            while next_i < lines.len() && lines[next_i].depth > base_depth { next_i += 1; }
+            // next_index retornado por decode_object — sin re-escaneo
+            let (obj, next_i) = self.decode_object(base_depth + 1, lines, index + 1)?;
             return Ok((key, Value::Object(obj), next_i));
         }
 
@@ -297,16 +298,17 @@ impl Decoder {
 
     // --- Array decoding ---
 
-    fn decode_array_from_header(&mut self, index: usize, lines: &[ParsedLine<'_>], header: &ArrayHeader<'_>) -> Result<Value, String> {
+    // Retorna (value, next_index) — callers avanzan sin re-escaneo
+    fn decode_array_from_header(&mut self, index: usize, lines: &[ParsedLine<'_>], header: &ArrayHeader<'_>) -> Result<(Value, usize), String> {
         if header.length == 0 {
-            return Ok(Value::Array(vec![]));
+            return Ok((Value::Array(vec![]), index + 1));
         }
 
         //Inline values
         if let Some(ref inline) = header.inline_values {
             if header.fields.is_none() {
                 let values = self.parse_delimited_values(inline, header.delimiter);
-                return Ok(Value::Array(values));
+                return Ok((Value::Array(values), index + 1));
             }
         }
 
@@ -319,7 +321,7 @@ impl Decoder {
         self.decode_expanded_array(index, lines, header.length)
     }
 
-    fn decode_tabular_array(&mut self, header_idx: usize, lines: &[ParsedLine<'_>], expected: usize, fields: &[&str], delimiter: char) -> Result<Value, String> {
+    fn decode_tabular_array(&mut self, header_idx: usize, lines: &[ParsedLine<'_>], expected: usize, fields: &[&str], delimiter: char) -> Result<(Value, usize), String> {
         let base_depth = lines[header_idx].depth;
         let mut result = Vec::with_capacity(expected);
         let mut i = header_idx + 1;
@@ -338,10 +340,10 @@ impl Decoder {
             i += 1;
         }
 
-        Ok(Value::Array(result))
+        Ok((Value::Array(result), i))
     }
 
-    fn decode_expanded_array(&mut self, header_idx: usize, lines: &[ParsedLine<'_>], expected: usize) -> Result<Value, String> {
+    fn decode_expanded_array(&mut self, header_idx: usize, lines: &[ParsedLine<'_>], expected: usize) -> Result<(Value, usize), String> {
         let base_depth = lines[header_idx].depth;
         let mut result = Vec::with_capacity(expected);
         let mut i = header_idx + 1;
@@ -355,21 +357,17 @@ impl Decoder {
 
                 if let Some(header) = self.try_array_header(item_content) {
                     if header.key.is_some() {
-                        //Array-valued first field of an object (e.g., "- deps[2]: a, b")
-                        let obj = self.decode_list_item_object(line, lines, i, base_depth)?;
+                        let (obj, next_i) = self.decode_list_item_object(line, lines, i, base_depth)?;
                         result.push(Value::Object(obj));
-                        i += 1;
-                        while i < lines.len() && lines[i].depth > base_depth + 1 { i += 1; }
+                        i = next_i;
                         continue;
                     } else if let Some(ref inline) = header.inline_values {
-                        //Bare inline array item (e.g., "- [3]: a, b, c")
                         result.push(Value::Array(self.parse_delimited_values(inline, header.delimiter)));
                     }
                 } else if item_content.contains(':') {
-                    let obj = self.decode_list_item_object(line, lines, i, base_depth)?;
+                    let (obj, next_i) = self.decode_list_item_object(line, lines, i, base_depth)?;
                     result.push(Value::Object(obj));
-                    i += 1;
-                    while i < lines.len() && lines[i].depth > base_depth + 1 { i += 1; }
+                    i = next_i;
                     continue;
                 } else {
                     result.push(self.parse_inline_value(item_content));
@@ -378,20 +376,23 @@ impl Decoder {
             i += 1;
         }
 
-        Ok(Value::Array(result))
+        Ok((Value::Array(result), i))
     }
 
-    fn decode_list_item_object(&mut self, _line: &ParsedLine<'_>, lines: &[ParsedLine<'_>], index: usize, base_depth: usize) -> Result<SconMap<String, Value>, String> {
+    // Retorna (map, next_index) — elimina re-escaneo en decode_expanded_array y decode_key_value
+    fn decode_list_item_object(&mut self, _line: &ParsedLine<'_>, lines: &[ParsedLine<'_>], index: usize, base_depth: usize) -> Result<(SconMap<String, Value>, usize), String> {
         let item_content = &lines[index].content[2..]; // skip "- "
 
         let mut result = SconMap::default();
         let cont_depth = base_depth + 2;
+        let mut cont_start = index + 1;
 
         //First field may be an array header (e.g., "dependencies[1]: auth")
         if let Some(header) = self.try_array_header(item_content) {
             if let Some(key) = header.key {
-                let val = self.decode_array_from_header(index, lines, &header)?;
+                let (val, next_i) = self.decode_array_from_header(index, lines, &header)?;
                 result.insert(key.to_string(), val);
+                cont_start = next_i;
             }
         } else {
             let (key, key_end) = self.parse_key(item_content)?;
@@ -400,15 +401,16 @@ impl Decoder {
             if !rest.is_empty() {
                 result.insert(key, self.parse_inline_value(rest));
             } else if index + 1 < lines.len() && lines[index + 1].depth >= cont_depth {
-                let obj = self.decode_object(cont_depth, lines, index + 1)?;
+                let (obj, next_i) = self.decode_object(cont_depth, lines, index + 1)?;
                 result.insert(key, Value::Object(obj));
+                cont_start = next_i;
             } else {
                 result.insert(key, Value::Object(SconMap::default()));
             }
         }
 
         //Continuation fields
-        let mut i = index + 1;
+        let mut i = cont_start;
         while i < lines.len() {
             let next = &lines[i];
             if next.depth < cont_depth { break; }
@@ -418,10 +420,9 @@ impl Decoder {
                 //Array header in continuation
                 if let Some(header) = self.try_array_header(next.content) {
                     if let Some(k) = header.key {
-                        let val = self.decode_array_from_header(i, lines, &header)?;
+                        let (val, next_i) = self.decode_array_from_header(i, lines, &header)?;
                         result.insert(k.to_string(), val);
-                        i += 1;
-                        while i < lines.len() && lines[i].depth > cont_depth { i += 1; }
+                        i = next_i;
                         continue;
                     }
                 }
@@ -436,7 +437,7 @@ impl Decoder {
             i += 1;
         }
 
-        Ok(result)
+        Ok((result, i))
     }
 
     // --- Parsing helpers ---
