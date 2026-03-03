@@ -253,7 +253,15 @@ impl Decoder {
 
                 if self.is_array_header(item_content) {
                     if let Some(header) = self.parse_array_header(item_content) {
-                        if let Some(ref inline) = header.inline_values {
+                        if header.key.is_some() {
+                            // Array-valued first field of an object (e.g., "- deps[2]: a, b")
+                            let obj = self.decode_list_item_object(line, lines, i, base_depth)?;
+                            result.push(Value::Object(obj));
+                            i += 1;
+                            while i < lines.len() && lines[i].depth > base_depth + 1 { i += 1; }
+                            continue;
+                        } else if let Some(ref inline) = header.inline_values {
+                            // Bare inline array item (e.g., "- [3]: a, b, c")
                             result.push(Value::Array(self.parse_delimited_values(inline, header.delimiter)));
                         }
                     }
@@ -275,19 +283,30 @@ impl Decoder {
 
     fn decode_list_item_object(&self, _line: &ParsedLine, lines: &[ParsedLine], index: usize, base_depth: usize) -> Result<IndexMap<String, Value>, String> {
         let item_content = &lines[index].content[2..]; // skip "- "
-        let (key, key_end) = self.parse_key(item_content)?;
-        let rest = item_content[key_end..].trim();
 
         let mut result = IndexMap::new();
         let cont_depth = base_depth + 2;
 
-        if !rest.is_empty() {
-            result.insert(key, self.parse_inline_value(rest));
-        } else if index + 1 < lines.len() && lines[index + 1].depth >= cont_depth {
-            let obj = self.decode_object(cont_depth, lines, index + 1)?;
-            result.insert(key, Value::Object(obj));
+        // First field may be an array header (e.g., "dependencies[1]: auth")
+        if self.is_array_header(item_content) {
+            if let Some(header) = self.parse_array_header(item_content) {
+                if let Some(ref key) = header.key {
+                    let val = self.decode_array_from_header(index, lines, &header)?;
+                    result.insert(key.clone(), val);
+                }
+            }
         } else {
-            result.insert(key, Value::Object(IndexMap::new()));
+            let (key, key_end) = self.parse_key(item_content)?;
+            let rest = item_content[key_end..].trim();
+
+            if !rest.is_empty() {
+                result.insert(key, self.parse_inline_value(rest));
+            } else if index + 1 < lines.len() && lines[index + 1].depth >= cont_depth {
+                let obj = self.decode_object(cont_depth, lines, index + 1)?;
+                result.insert(key, Value::Object(obj));
+            } else {
+                result.insert(key, Value::Object(IndexMap::new()));
+            }
         }
 
         // Continuation fields

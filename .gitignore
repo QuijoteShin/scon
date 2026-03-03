@@ -13,6 +13,21 @@ node_modules/
 .DS_Store
 *.swp
 
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.pdf
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.bbl
+*.blg
+*.nav
+*.snm
+*.vrb
+
 # Bench results (regenerable)
 bench/datasets/*.json
 package-lock.json

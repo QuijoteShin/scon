@@ -95,14 +95,14 @@ PHP and JS additionally measure `scon_dedup` and `scon_dedup_min` (structural de
 
 | Dataset | JSON | JSON pretty | SCON | SCON(min) | SCON(dedup+min) |
 |---------|-----:|------------:|-----:|----------:|----------------:|
-| OpenAPI Specs | 49 KB | 183 KB | 57 KB | 42 KB | 17 KB |
-| Config Records | 73 KB | — | 75 KB | 67 KB | — |
-| DB Exports | 20 KB | — | 15 KB | 14 KB | 14 KB |
+| OpenAPI Specs | 49 KB | 119 KB | 57 KB | 42 KB | 17 KB |
+| Config Records | 73 KB | 122 KB | 75 KB | 67 KB | 65 KB |
+| DB Exports | 20 KB | 32 KB | 15 KB | 14 KB | 14 KB |
 
 Key findings:
-- **SCON(min) is always smaller than JSON(min)** — 13% smaller on OpenAPI, 29% on DB Exports
+- **SCON(min) is always smaller than JSON(min)** — 13% smaller on OpenAPI, 8% on Config Records, 29% on DB Exports
 - **SCON(dedup+min) achieves 66% reduction** on OpenAPI Specs vs JSON
-- **JSON pretty-print is 3.8x larger** than JSON minified on OpenAPI — SCON's readable format adds only 17% overhead vs JSON min
+- **JSON pretty-print is 2.5x larger** than JSON minified on OpenAPI — SCON's readable format adds only 18% overhead vs JSON min
 
 ### Speed: Rust native (format-vs-format)
 
@@ -110,17 +110,17 @@ The fairest comparison — both serde_json and SCON are compiled Rust:
 
 | Dataset | serde_json enc | SCON enc | Ratio | serde_json dec | SCON dec | Ratio |
 |---------|---------------:|---------:|------:|---------------:|---------:|------:|
-| OpenAPI Specs | 0.056 ms | 0.092 ms | 1.6x | 0.292 ms | 0.858 ms | 2.9x |
-| Config Records | 0.061 ms | 0.122 ms | 2.0x | 0.247 ms | 0.765 ms | 3.1x |
-| DB Exports | 0.079 ms | 0.287 ms | 3.6x | 0.416 ms | 0.888 ms | 2.1x |
+| OpenAPI Specs | 0.061 ms | 0.099 ms | 1.6x | 0.343 ms | 0.953 ms | 2.8x |
+| Config Records | 0.087 ms | 0.187 ms | 2.2x | 0.457 ms | 1.130 ms | 2.5x |
+| DB Exports | 0.022 ms | 0.075 ms | 3.4x | 0.091 ms | 0.312 ms | 3.4x |
 
-SCON encoding is 1.6–3.6x slower; decoding 2.1–3.1x slower in this early-stage implementation. The gap is dominated by avoidable allocations (unconditional input cloning, per-line string copies) rather than fundamental format complexity. See Section 11.4 of the paper for a detailed overhead attribution.
+SCON encoding is 1.6–3.4x slower; decoding 2.5–3.4x slower in this early-stage implementation. The gap is dominated by avoidable allocations (unconditional input cloning, per-line string copies) rather than fundamental format complexity. See the paper for a detailed overhead attribution.
 
 ### Key takeaways
 
 1. **SCON's strength is payload size, not speed.** On tabular data, SCON(min) is 29% smaller than JSON without compression. With dedup, up to 66% smaller.
 
-2. **The speed gap reflects implementation maturity.** The 2–3x Rust-vs-Rust ratio is dominated by avoidable allocations in the v0.x reference decoder (input cloning, per-line string copies, field name duplication in tabular arrays). Significant optimization headroom remains.
+2. **The speed gap reflects implementation maturity.** The 2.5–3.4x Rust-vs-Rust ratio is dominated by avoidable allocations in the v0.x reference decoder (input cloning, per-line string copies, field name duplication in tabular arrays). Significant optimization headroom remains.
 
 3. **SCON is readable AND smaller.** JSON needs pretty-print to be human-readable (3.8x size increase). SCON's standard format is readable with only 17% overhead vs JSON minified.
 

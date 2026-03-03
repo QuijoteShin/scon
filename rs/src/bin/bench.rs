@@ -231,6 +231,12 @@ fn run_benchmark(name: &str, json_str: &str, json_val: &serde_json::Value, scon_
                     .position(|(a, b)| a != b)
                     .unwrap_or(scon_encoded.len().min(re_encoded.len()));
                 println!("    First diff at byte {}", first_diff);
+                // Debug: dump context around diff
+                let start = if first_diff > 80 { first_diff - 80 } else { 0 };
+                let end = (first_diff + 80).min(scon_encoded.len()).min(re_encoded.len());
+                println!("    ORIG: {:?}", &scon_encoded[start..end]);
+                println!("    RENC: {:?}", &re_encoded[start..end]);
+                println!("    Lengths: orig={} re={}", scon_encoded.len(), re_encoded.len());
             }
         }
         Err(e) => println!("  Roundtrip:          DECODE ERROR: {}", e),
