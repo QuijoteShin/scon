@@ -596,9 +596,39 @@ impl Decoder {
         result
     }
 
+    // Inline splitting + parsing — evita Vec<&str> intermedio de split_top_level
     fn parse_delimited_values(&mut self, input: &str, delimiter: char) -> Vec<Value> {
-        let parts = self.split_top_level(input, delimiter);
-        parts.iter().map(|p| self.parse_primitive(p.trim())).collect()
+        let mut result = Vec::new();
+        let mut seg_start = 0;
+        let mut in_quotes = false;
+        let mut brace_depth = 0i32;
+        let mut bracket_depth = 0i32;
+        let bytes = input.as_bytes();
+        let delim_byte = delimiter as u8;
+
+        let mut i = 0;
+        while i < bytes.len() {
+            let c = bytes[i];
+            if c == b'\\' && in_quotes && i + 1 < bytes.len() { i += 2; continue; }
+            if c == b'"' { in_quotes = !in_quotes; }
+            if !in_quotes {
+                if c == b'{' { brace_depth += 1; }
+                if c == b'}' { brace_depth -= 1; }
+                if c == b'[' { bracket_depth += 1; }
+                if c == b']' { bracket_depth -= 1; }
+            }
+            if c == delim_byte && !in_quotes && brace_depth == 0 && bracket_depth == 0 {
+                result.push(self.parse_primitive(input[seg_start..i].trim()));
+                seg_start = i + 1;
+                i += 1;
+                continue;
+            }
+            i += 1;
+        }
+        if seg_start < input.len() || !result.is_empty() {
+            result.push(self.parse_primitive(input[seg_start..].trim()));
+        }
+        result
     }
 
     fn parse_primitive(&mut self, token: &str) -> Value {
