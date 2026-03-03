@@ -16,6 +16,7 @@
   },
   "license": "ISC",
   "dependencies": {
+    "gpt-tokenizer": "^3.4.0",
     "hash-wasm": "^4.11.0"
   }
 }

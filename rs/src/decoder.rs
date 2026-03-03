@@ -22,19 +22,21 @@ impl Decoder {
     }
 
     pub fn decode(&mut self, input: &str) -> Result<Value, String> {
-        let mut scon = input.to_string();
-
-        // Expand if minified
-        if self.is_minified(&scon) {
-            scon = Minifier::expand(&scon, self.indent);
-        }
+        // Avoid unconditional clone - only allocate if minified input needs expansion
+        let expanded;
+        let scon: &str = if self.is_minified(input) {
+            expanded = Minifier::expand(input, self.indent);
+            &expanded
+        } else {
+            input
+        };
 
         // Auto-detect indent
         if self.indent_auto_detect {
             if let Some(cap) = scon.find('\n').and_then(|nl_pos| {
                 let after = &scon[nl_pos + 1..];
                 let spaces = after.len() - after.trim_start_matches(' ').len();
-                if spaces > 0 && after.len() > spaces && !after.as_bytes()[spaces].is_ascii_whitespace() {
+                if spaces > 0 && after.len() > spaces && !after.as_bytes().get(spaces).map_or(true, |b| b.is_ascii_whitespace()) {
                     Some(spaces)
                 } else {
                     None
@@ -45,7 +47,7 @@ impl Decoder {
                 // Scan all lines for first indented non-empty line
                 for line in scon.lines() {
                     let spaces = line.len() - line.trim_start_matches(' ').len();
-                    if spaces > 0 && line.trim().len() > 0 && !line.trim().starts_with('#') {
+                    if spaces > 0 && !line.trim().is_empty() && !line.trim().starts_with('#') {
                         self.indent = spaces;
                         break;
                     }
@@ -619,8 +621,7 @@ impl Decoder {
                 if c == ']' { bracket_depth -= 1; }
             }
             if c == delimiter && !in_quotes && brace_depth == 0 && bracket_depth == 0 {
-                parts.push(buffer.clone());
-                buffer.clear();
+                parts.push(std::mem::take(&mut buffer));
                 i += 1;
                 continue;
             }

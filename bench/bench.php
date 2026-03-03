@@ -38,119 +38,29 @@ echo "║  Iterations: {$ITERATIONS}" . str_repeat(' ', 42 - strlen((string)$ITE
 echo "╚══════════════════════════════════════════════════════════╝\n\n";
 
 # ============================================================================
-# 1. DATASET GENERATION
+# 1. LOAD CANONICAL FIXTURES (byte-identical across PHP, JS, Rust)
 # ============================================================================
 
-function generateDatasets(): array {
-    $datasets = [];
-    srand(42); # Deterministic for reproducible benchmarks
-
-    # --- Dataset 1: OpenAPI Specs (synthetic ~115KB) ---
-    $spec = [
-        'openapi' => '3.1.0',
-        'info' => ['title' => 'Benchmark API', 'version' => '1.0.0', 'description' => 'API specification for benchmark testing'],
-        'paths' => [],
+function loadFixtures(): array {
+    $fixtureDir = __DIR__ . '/fixtures';
+    $slugToName = [
+        'openapi_specs'  => 'OpenAPI Specs',
+        'config_records' => 'Config Records',
+        'db_exports'     => 'DB Exports',
     ];
-    $resources = ['users', 'orders', 'products', 'categories', 'reviews', 'payments', 'shipments', 'notifications', 'reports', 'settings'];
-    $actions = ['list', 'get', 'create', 'update', 'delete', 'search', 'export'];
-    $methods = ['list' => 'get', 'get' => 'get', 'create' => 'post', 'update' => 'put', 'delete' => 'delete', 'search' => 'get', 'export' => 'get'];
-    foreach ($resources as $resource) {
-        foreach ($actions as $action) {
-            $path = "/api/{$resource}/{$action}";
-            $params = [['name' => 'Authorization', 'in' => 'header', 'required' => true, 'schema' => ['type' => 'string']]];
-            if (in_array($action, ['get', 'update', 'delete'])) {
-                $params[] = ['name' => 'id', 'in' => 'path', 'required' => true, 'schema' => ['type' => 'integer']];
-            }
-            if (in_array($action, ['list', 'search'])) {
-                $params[] = ['name' => 'page', 'in' => 'query', 'schema' => ['type' => 'integer', 'default' => 1]];
-                $params[] = ['name' => 'limit', 'in' => 'query', 'schema' => ['type' => 'integer', 'default' => 20]];
-                $params[] = ['name' => 'sort', 'in' => 'query', 'schema' => ['type' => 'string', 'default' => 'created_at']];
-            }
-            $spec['paths'][$path] = [$methods[$action] => [
-                'summary' => ucfirst($action) . ' ' . $resource,
-                'tags' => [$resource],
-                'parameters' => $params,
-                'responses' => [
-                    '200' => ['description' => 'Success', 'content' => ['application/json' => ['schema' => ['type' => 'object', 'properties' => ['success' => ['type' => 'boolean'], 'data' => ['type' => 'object']]]]]],
-                    '400' => ['description' => 'Bad Request', 'content' => ['application/json' => ['schema' => ['type' => 'object', 'properties' => ['error' => ['type' => 'string']]]]]],
-                    '401' => ['description' => 'Unauthorized'],
-                    '404' => ['description' => 'Not Found'],
-                    '500' => ['description' => 'Internal Server Error'],
-                ],
-            ]];
+    $datasets = [];
+    foreach ($slugToName as $slug => $name) {
+        $path = "$fixtureDir/{$slug}.json";
+        if (!file_exists($path)) {
+            throw new \RuntimeException("Fixture not found: $path — run: php bench/generate_fixtures.php");
         }
+        $datasets[$name] = json_decode(file_get_contents($path), true);
     }
-    $datasets['OpenAPI Specs'] = $spec;
-
-    # --- Dataset 2: Config Records (synthetic ~75KB) ---
-    $services = ['auth', 'billing', 'notifications', 'analytics', 'search', 'storage', 'cache', 'queue', 'email', 'sms'];
-    $envs = ['production', 'staging', 'development', 'testing'];
-    $configRecords = ['services' => [], 'feature_flags' => []];
-    foreach ($services as $svc) {
-        foreach ($envs as $env) {
-            $configRecords['services'][] = [
-                'service_name' => $svc,
-                'environment' => $env,
-                'host' => "svc-{$svc}.{$env}.internal",
-                'port' => rand(3000, 9000),
-                'replicas' => rand(1, 8),
-                'health_check' => "/health",
-                'timeout_ms' => rand(1000, 30000),
-                'retry_policy' => ['max_retries' => rand(1, 5), 'backoff_ms' => rand(100, 2000)],
-                'tls' => $env === 'production',
-                'log_level' => $env === 'production' ? 'ERROR' : 'DEBUG',
-                'rate_limit' => ['requests_per_minute' => rand(100, 10000), 'burst' => rand(10, 100)],
-                'dependencies' => array_slice($services, 0, rand(1, 4)),
-                'metadata' => [
-                    'version' => rand(1, 5) . '.' . rand(0, 20) . '.' . rand(0, 100),
-                    'deployed_at' => '2026-02-' . str_pad(rand(1, 28), 2, '0', STR_PAD_LEFT) . 'T10:00:00',
-                    'deployed_by' => 'ci/cd-pipeline-' . rand(100, 999),
-                ],
-            ];
-        }
-    }
-    $flagNames = ['dark_mode', 'beta_ui', 'new_checkout', 'ai_assistant', 'realtime_sync', 'export_pdf', 'bulk_import', 'webhooks', 'api_v2', 'sso_oauth'];
-    for ($i = 0; $i < 200; $i++) {
-        $configRecords['feature_flags'][] = [
-            'flag_name' => 'feature.' . $flagNames[rand(0, 9)] . '.' . rand(1, 50),
-            'enabled' => (bool)rand(0, 1),
-            'rollout_percentage' => rand(0, 100),
-            'targeting_rules' => [
-                ['attribute' => 'plan', 'operator' => 'in', 'values' => ['pro', 'enterprise']],
-                ['attribute' => 'country', 'operator' => 'eq', 'value' => ['CL', 'US', 'MX', 'AR'][rand(0, 3)]],
-            ],
-            'created_at' => '2025-' . str_pad(rand(1, 12), 2, '0', STR_PAD_LEFT) . '-' . str_pad(rand(1, 28), 2, '0', STR_PAD_LEFT),
-            'updated_at' => '2026-03-01T12:00:00',
-        ];
-    }
-    $datasets['Config Records'] = $configRecords;
-
-    # --- Dataset 3: DB Exports (synthetic ~50KB) ---
-    $types = ['INT UNSIGNED', 'BIGINT UNSIGNED', 'VARCHAR(255)', 'VARCHAR(2000)', 'TEXT', 'DATETIME', 'TINYINT(1)', 'DECIMAL(12,2)'];
-    $tables = [];
-    $tableNames = ['users', 'profiles', 'entities', 'entity_relationships', 'orders', 'order_items', 'products', 'categories',
-        'payments', 'payment_methods', 'invoices', 'workorders', 'work_units', 'notes', 'files', 'audit_log',
-        'roles', 'role_packages', 'permissions', 'sessions', 'settings', 'notifications', 'email_queue', 'data_values_history'];
-    foreach ($tableNames as $tn) {
-        $colCount = rand(5, 15);
-        $columns = [['name' => 'id', 'definition' => 'INT UNSIGNED AUTO_INCREMENT PRIMARY KEY']];
-        $colNames = ['scope_entity_id', 'name', 'status', 'type', 'code', 'description', 'amount', 'total_clp',
-            'created_at', 'updated_at', 'created_by', 'email', 'phone', 'parent_id', 'sort_order'];
-        for ($c = 0; $c < min($colCount, count($colNames)); $c++) {
-            $columns[] = ['name' => $colNames[$c], 'definition' => $types[rand(0, count($types) - 1)] . (rand(0, 1) ? ' NOT NULL' : ' DEFAULT NULL')];
-        }
-        $indexes = ['PRIMARY KEY (`id`)', "KEY `idx_scope` (`scope_entity_id`)"];
-        if (rand(0, 1)) $indexes[] = "KEY `idx_status` (`status`)";
-        if (rand(0, 1)) $indexes[] = "UNIQUE KEY `idx_code` (`code`)";
-        $tables[] = ['table_name' => $tn, 'column_count' => count($columns), 'columns' => $columns, 'indexes' => $indexes];
-    }
-    $datasets['DB Exports'] = ['schema_version' => '2026-03-02', 'database' => 'benchmark_db', 'tables' => $tables];
-
     return $datasets;
 }
 
-echo "Generating datasets...\n";
-$datasets = generateDatasets();
+echo "Loading fixtures from bench/fixtures/...\n";
+$datasets = loadFixtures();
 foreach ($datasets as $name => $data) {
     $jsonSize = strlen(json_encode($data));
     echo "  {$name}: " . number_format($jsonSize) . " bytes JSON (" . count((array)$data) . " top-level keys)\n";
@@ -227,6 +137,10 @@ foreach ($datasets as $datasetName => $data) {
     $jsonSize = strlen($jsonStr);
     $jsonGzipSize = strlen(gzencode($jsonStr, 9));
 
+    $jsonPrettyStr = json_encode($data, JSON_PRETTY_PRINT);
+    $jsonPrettySize = strlen($jsonPrettyStr);
+    $jsonPrettyGzipSize = strlen(gzencode($jsonPrettyStr, 9));
+
     $sconStr = Scon::encode($data);
     $sconSize = strlen($sconStr);
     $sconGzipSize = strlen(gzencode($sconStr, 9));
@@ -245,6 +159,7 @@ foreach ($datasets as $datasetName => $data) {
 
     $r['payload'] = [
         'json' => ['raw' => $jsonSize, 'gzip' => $jsonGzipSize],
+        'json_pretty' => ['raw' => $jsonPrettySize, 'gzip' => $jsonPrettyGzipSize],
         'scon' => ['raw' => $sconSize, 'gzip' => $sconGzipSize],
         'scon_min' => ['raw' => $sconMinSize, 'gzip' => $sconMinGzipSize],
         'scon_dedup' => ['raw' => $sconDedupSize, 'gzip' => $sconDedupGzipSize],
@@ -253,6 +168,7 @@ foreach ($datasets as $datasetName => $data) {
 
     echo "  Payload Size:\n";
     echo "    JSON:             " . formatBytes($jsonSize) . " (gzip: " . formatBytes($jsonGzipSize) . ")\n";
+    echo "    JSON(pretty):     " . formatBytes($jsonPrettySize) . " (gzip: " . formatBytes($jsonPrettyGzipSize) . ")\n";
     echo "    SCON:             " . formatBytes($sconSize) . " (" . percentChange($jsonSize, $sconSize) . ") (gzip: " . formatBytes($sconGzipSize) . ")\n";
     echo "    SCON(min):        " . formatBytes($sconMinSize) . " (" . percentChange($jsonSize, $sconMinSize) . ") (gzip: " . formatBytes($sconMinGzipSize) . ")\n";
     echo "    SCON(dedup):      " . formatBytes($sconDedupSize) . " (" . percentChange($jsonSize, $sconDedupSize) . ")\n";
@@ -478,6 +394,7 @@ if ($OUTPUT_MODE === 'json' || $OUTPUT_MODE === 'both') {
         'meta' => [
             'lang' => 'php',
             'suite' => 'standard',
+            'fixture_source' => 'bench/fixtures/',
             'php_version' => PHP_VERSION,
             'iterations' => $ITERATIONS,
             'date' => date('Y-m-d\TH:i:s'),

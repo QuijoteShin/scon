@@ -48,7 +48,7 @@ function generateServerLogs(int $targetBytes = 10_000_000): array {
     ];
 
     $logs = [];
-    $baseTs = time() - 86400;
+    $baseTs = 1740873600 - 86400; # Fixed epoch for reproducibility (2025-03-02 00:00:00 UTC)
     $i = 0;
     while (true) {
         $entry = [
@@ -65,9 +65,9 @@ function generateServerLogs(int $targetBytes = 10_000_000): array {
             'user_agent' => $userAgents[array_rand($userAgents)],
             'ip' => rand(1, 254) . '.' . rand(0, 255) . '.' . rand(0, 255) . '.' . rand(1, 254),
             'trace_context' => [
-                'trace_id' => bin2hex(random_bytes(16)),
-                'span_id' => bin2hex(random_bytes(8)),
-                'parent_span_id' => rand(0, 1) ? bin2hex(random_bytes(8)) : null,
+                'trace_id' => sprintf('%08x%08x%08x%08x', rand(0, 0xFFFFFFFF), rand(0, 0xFFFFFFFF), rand(0, 0xFFFFFFFF), rand(0, 0xFFFFFFFF)),
+                'span_id' => sprintf('%08x%08x', rand(0, 0xFFFFFFFF), rand(0, 0xFFFFFFFF)),
+                'parent_span_id' => rand(0, 1) ? sprintf('%08x%08x', rand(0, 0xFFFFFFFF), rand(0, 0xFFFFFFFF)) : null,
             ],
         ];
         # Occasional extra fields
@@ -170,11 +170,11 @@ function generateMultimediaMetadata(int $targetBytes = 10_000_000): array {
             'duration_seconds' => rand(30, 14400),
             'file_size_bytes' => rand(1000000, 50000000000),
             'container' => $containers[array_rand($containers)],
-            'created_at' => date('Y-m-d\TH:i:s', time() - rand(0, 86400 * 365 * 5)) . 'Z',
+            'created_at' => date('Y-m-d\TH:i:s', 1740873600 - rand(0, 86400 * 365 * 5)) . 'Z',
             'streams' => [],
             'metadata' => [
                 'encoder' => ['FFmpeg', 'HandBrake', 'Adobe Media Encoder', 'DaVinci Resolve'][rand(0, 3)],
-                'encoding_date' => date('Y-m-d', time() - rand(0, 86400 * 365)),
+                'encoding_date' => date('Y-m-d', 1740873600 - rand(0, 86400 * 365)),
                 'language' => ['en', 'es', 'fr', 'de', 'ja', 'pt', 'ko'][rand(0, 6)],
                 'copyright' => '(c) ' . rand(2020, 2026) . ' Example Studios',
             ],
@@ -276,6 +276,8 @@ $generators = [
     'Geo API' => 'generateGeoApi',
     'Multimedia Metadata' => 'generateMultimediaMetadata',
 ];
+
+srand(42); # Deterministic for reproducible benchmarks
 
 $allResults = [];
 

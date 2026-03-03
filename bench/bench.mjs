@@ -6,7 +6,7 @@
 // Datasets match PHP bench for cross-language comparison
 
 import { createRequire } from 'module';
-import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { gzipSync } from 'zlib';
@@ -45,126 +45,21 @@ console.log(`║  Iterations: ${String(ITERATIONS).padEnd(43)}║`);
 console.log('╚══════════════════════════════════════════════════════════╝\n');
 
 // ============================================================================
-// 1. DATASET GENERATION (deterministic, matches PHP with srand(42))
+// 1. LOAD CANONICAL FIXTURES (byte-identical across PHP, JS, Rust)
 // ============================================================================
 
-function seededRand(seed) {
-    let s = seed;
-    return function(min = 0, max = 2147483647) {
-        s = (s * 1103515245 + 12345) & 0x7fffffff;
-        return min + (s % (max - min + 1));
+function loadFixtures() {
+    const fixtureDir = join(__dirname, 'fixtures');
+    const slugToName = {
+        'openapi_specs':  'OpenAPI Specs',
+        'config_records': 'Config Records',
+        'db_exports':     'DB Exports',
     };
-}
-
-function generateDatasets() {
-    const rand = seededRand(42);
     const datasets = {};
-
-    // --- Dataset 1: OpenAPI Specs (~115KB) ---
-    const spec = {
-        openapi: '3.1.0',
-        info: { title: 'Benchmark API', version: '1.0.0', description: 'API specification for benchmark testing' },
-        paths: {},
-    };
-    const resources = ['users', 'orders', 'products', 'categories', 'reviews', 'payments', 'shipments', 'notifications', 'reports', 'settings'];
-    const actions = ['list', 'get', 'create', 'update', 'delete', 'search', 'export'];
-    const methodMap = { list: 'get', get: 'get', create: 'post', update: 'put', delete: 'delete', search: 'get', export: 'get' };
-
-    for (const resource of resources) {
-        for (const action of actions) {
-            const path = `/api/${resource}/${action}`;
-            const params = [{ name: 'Authorization', in: 'header', required: true, schema: { type: 'string' } }];
-            if (['get', 'update', 'delete'].includes(action)) {
-                params.push({ name: 'id', in: 'path', required: true, schema: { type: 'integer' } });
-            }
-            if (['list', 'search'].includes(action)) {
-                params.push({ name: 'page', in: 'query', schema: { type: 'integer', default: 1 } });
-                params.push({ name: 'limit', in: 'query', schema: { type: 'integer', default: 20 } });
-                params.push({ name: 'sort', in: 'query', schema: { type: 'string', default: 'created_at' } });
-            }
-            spec.paths[path] = {
-                [methodMap[action]]: {
-                    summary: `${action.charAt(0).toUpperCase() + action.slice(1)} ${resource}`,
-                    tags: [resource],
-                    parameters: params,
-                    responses: {
-                        '200': { description: 'Success', content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, data: { type: 'object' } } } } } },
-                        '400': { description: 'Bad Request', content: { 'application/json': { schema: { type: 'object', properties: { error: { type: 'string' } } } } } },
-                        '401': { description: 'Unauthorized' },
-                        '404': { description: 'Not Found' },
-                        '500': { description: 'Internal Server Error' },
-                    },
-                },
-            };
-        }
+    for (const [slug, name] of Object.entries(slugToName)) {
+        const path = join(fixtureDir, `${slug}.json`);
+        datasets[name] = JSON.parse(readFileSync(path, 'utf8'));
     }
-    datasets['OpenAPI Specs'] = spec;
-
-    // --- Dataset 2: Config Records (~75KB) ---
-    const services = ['auth', 'billing', 'notifications', 'analytics', 'search', 'storage', 'cache', 'queue', 'email', 'sms'];
-    const envs = ['production', 'staging', 'development', 'testing'];
-    const configRecords = { services: [], feature_flags: [] };
-
-    for (const svc of services) {
-        for (const env of envs) {
-            configRecords.services.push({
-                service_name: svc,
-                environment: env,
-                host: `svc-${svc}.${env}.internal`,
-                port: rand(3000, 9000),
-                replicas: rand(1, 8),
-                health_check: '/health',
-                timeout_ms: rand(1000, 30000),
-                retry_policy: { max_retries: rand(1, 5), backoff_ms: rand(100, 2000) },
-                tls: env === 'production',
-                log_level: env === 'production' ? 'ERROR' : 'DEBUG',
-                rate_limit: { requests_per_minute: rand(100, 10000), burst: rand(10, 100) },
-                dependencies: services.slice(0, rand(1, 4)),
-                metadata: {
-                    version: `${rand(1, 5)}.${rand(0, 20)}.${rand(0, 100)}`,
-                    deployed_at: `2026-02-${String(rand(1, 28)).padStart(2, '0')}T10:00:00`,
-                    deployed_by: `ci/cd-pipeline-${rand(100, 999)}`,
-                },
-            });
-        }
-    }
-    const flagNames = ['dark_mode', 'beta_ui', 'new_checkout', 'ai_assistant', 'realtime_sync', 'export_pdf', 'bulk_import', 'webhooks', 'api_v2', 'sso_oauth'];
-    for (let i = 0; i < 200; i++) {
-        configRecords.feature_flags.push({
-            flag_name: `feature.${flagNames[rand(0, 9)]}.${rand(1, 50)}`,
-            enabled: !!rand(0, 1),
-            rollout_percentage: rand(0, 100),
-            targeting_rules: [
-                { attribute: 'plan', operator: 'in', values: ['pro', 'enterprise'] },
-                { attribute: 'country', operator: 'eq', value: ['CL', 'US', 'MX', 'AR'][rand(0, 3)] },
-            ],
-            created_at: `2025-${String(rand(1, 12)).padStart(2, '0')}-${String(rand(1, 28)).padStart(2, '0')}`,
-            updated_at: '2026-03-01T12:00:00',
-        });
-    }
-    datasets['Config Records'] = configRecords;
-
-    // --- Dataset 3: DB Exports (~50KB) ---
-    const types = ['INT UNSIGNED', 'BIGINT UNSIGNED', 'VARCHAR(255)', 'VARCHAR(2000)', 'TEXT', 'DATETIME', 'TINYINT(1)', 'DECIMAL(12,2)'];
-    const tableNames = ['users', 'profiles', 'entities', 'entity_relationships', 'orders', 'order_items', 'products', 'categories',
-        'payments', 'payment_methods', 'invoices', 'workorders', 'work_units', 'notes', 'files', 'audit_log',
-        'roles', 'role_packages', 'permissions', 'sessions', 'settings', 'notifications', 'email_queue', 'data_values_history'];
-    const colNames = ['scope_entity_id', 'name', 'status', 'type', 'code', 'description', 'amount', 'total_clp',
-        'created_at', 'updated_at', 'created_by', 'email', 'phone', 'parent_id', 'sort_order'];
-    const tables = [];
-    for (const tn of tableNames) {
-        const colCount = rand(5, 15);
-        const columns = [{ name: 'id', definition: 'INT UNSIGNED AUTO_INCREMENT PRIMARY KEY' }];
-        for (let c = 0; c < Math.min(colCount, colNames.length); c++) {
-            columns.push({ name: colNames[c], definition: types[rand(0, types.length - 1)] + (rand(0, 1) ? ' NOT NULL' : ' DEFAULT NULL') });
-        }
-        const indexes = ['PRIMARY KEY (`id`)', 'KEY `idx_scope` (`scope_entity_id`)'];
-        if (rand(0, 1)) indexes.push('KEY `idx_status` (`status`)');
-        if (rand(0, 1)) indexes.push('UNIQUE KEY `idx_code` (`code`)');
-        tables.push({ table_name: tn, column_count: columns.length, columns, indexes });
-    }
-    datasets['DB Exports'] = { schema_version: '2026-03-02', database: 'benchmark_db', tables };
-
     return datasets;
 }
 
@@ -252,8 +147,8 @@ function benchmarkMemory(fn) {
 // 3. RUN BENCHMARKS
 // ============================================================================
 
-console.log('Generating datasets...');
-const datasets = generateDatasets();
+console.log('Loading fixtures from bench/fixtures/...');
+const datasets = loadFixtures();
 for (const [name, data] of Object.entries(datasets)) {
     const jsonSize = JSON.stringify(data).length;
     const topKeys = Object.keys(data).length;
@@ -268,27 +163,33 @@ for (const [datasetName, data] of Object.entries(datasets)) {
     const r = { dataset: datasetName };
 
     // --- Payload Size ---
+    // Use Buffer.byteLength for byte-accurate measurement (matches PHP strlen)
     const jsonStr = JSON.stringify(data);
-    const jsonSize = jsonStr.length;
+    const jsonSize = Buffer.byteLength(jsonStr, 'utf8');
     const jsonGzipSize = gzipSync(jsonStr, { level: 9 }).length;
 
+    const jsonPrettyStr = JSON.stringify(data, null, 2);
+    const jsonPrettySize = Buffer.byteLength(jsonPrettyStr, 'utf8');
+    const jsonPrettyGzipSize = gzipSync(jsonPrettyStr, { level: 9 }).length;
+
     const sconStr = SCON.encode(data);
-    const sconSize = sconStr.length;
+    const sconSize = Buffer.byteLength(sconStr, 'utf8');
     const sconGzipSize = gzipSync(sconStr, { level: 9 }).length;
 
     const sconMinStr = SCON.minify(sconStr);
-    const sconMinSize = sconMinStr.length;
+    const sconMinSize = Buffer.byteLength(sconMinStr, 'utf8');
     const sconMinGzipSize = gzipSync(sconMinStr, { level: 9 }).length;
 
     const sconDedupStr = await SCON.encode(data, { autoExtract: true });
-    const sconDedupSize = sconDedupStr.length;
+    const sconDedupSize = Buffer.byteLength(sconDedupStr, 'utf8');
     const sconDedupGzipSize = gzipSync(sconDedupStr, { level: 9 }).length;
 
     const sconDedupMinStr = SCON.minify(sconDedupStr);
-    const sconDedupMinSize = sconDedupMinStr.length;
+    const sconDedupMinSize = Buffer.byteLength(sconDedupMinStr, 'utf8');
 
     r.payload = {
         json: { raw: jsonSize, gzip: jsonGzipSize },
+        json_pretty: { raw: jsonPrettySize, gzip: jsonPrettyGzipSize },
         scon: { raw: sconSize, gzip: sconGzipSize },
         scon_min: { raw: sconMinSize, gzip: sconMinGzipSize },
         scon_dedup: { raw: sconDedupSize, gzip: sconDedupGzipSize },
@@ -297,6 +198,7 @@ for (const [datasetName, data] of Object.entries(datasets)) {
 
     console.log('  Payload Size:');
     console.log(`    JSON:             ${formatBytes(jsonSize)} (gzip: ${formatBytes(jsonGzipSize)})`);
+    console.log(`    JSON(pretty):     ${formatBytes(jsonPrettySize)} (gzip: ${formatBytes(jsonPrettyGzipSize)})`);
     console.log(`    SCON:             ${formatBytes(sconSize)} (${pctChange(jsonSize, sconSize)}) (gzip: ${formatBytes(sconGzipSize)})`);
     console.log(`    SCON(min):        ${formatBytes(sconMinSize)} (${pctChange(jsonSize, sconMinSize)}) (gzip: ${formatBytes(sconMinGzipSize)})`);
     console.log(`    SCON(dedup):      ${formatBytes(sconDedupSize)} (${pctChange(jsonSize, sconDedupSize)})`);
@@ -498,6 +400,7 @@ writeFileSync(outPath, JSON.stringify({
     meta: {
         lang: 'js',
         suite: 'standard',
+        fixture_source: 'bench/fixtures/',
         node_version: process.version,
         v8_version: process.versions.v8,
         iterations: ITERATIONS,

@@ -1,5 +1,9 @@
 # Rust
 /target/
+.claude
+.codex
+.gemini
+.oraculo
 Cargo.lock
 
 # Node
