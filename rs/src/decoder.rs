@@ -765,28 +765,41 @@ impl Decoder {
         if memchr(b'\\', s.as_bytes()).is_none() {
             return s.to_string();
         }
-        // Slow path: scratch buffer — clear reutiliza capacidad previa
+        // Slow path: chunk-copy por memchr — copia segmentos limpios de golpe, solo procesa escapes
         self.scratch.clear();
-        let bytes = s.as_bytes();
         let mut i = 0;
-        while i < bytes.len() {
-            if bytes[i] == b'\\' && i + 1 < bytes.len() {
-                match bytes[i + 1] {
-                    b'\\' => self.scratch.push('\\'),
-                    b'"' => self.scratch.push('"'),
-                    b'n' => self.scratch.push('\n'),
-                    b'r' => self.scratch.push('\r'),
-                    b't' => self.scratch.push('\t'),
-                    b';' => self.scratch.push(';'),
-                    other => {
+        while i < s.len() {
+            match memchr(b'\\', &s.as_bytes()[i..]) {
+                Some(offset) => {
+                    // Flush chunk limpio antes del escape
+                    if offset > 0 {
+                        self.scratch.push_str(&s[i..i + offset]);
+                    }
+                    let esc_pos = i + offset;
+                    if esc_pos + 1 < s.len() {
+                        match s.as_bytes()[esc_pos + 1] {
+                            b'\\' => self.scratch.push('\\'),
+                            b'"' => self.scratch.push('"'),
+                            b'n' => self.scratch.push('\n'),
+                            b'r' => self.scratch.push('\r'),
+                            b't' => self.scratch.push('\t'),
+                            b';' => self.scratch.push(';'),
+                            other => {
+                                self.scratch.push('\\');
+                                self.scratch.push(other as char);
+                            }
+                        }
+                        i = esc_pos + 2;
+                    } else {
                         self.scratch.push('\\');
-                        self.scratch.push(other as char);
+                        i = esc_pos + 1;
                     }
                 }
-                i += 2;
-            } else {
-                self.scratch.push(bytes[i] as char);
-                i += 1;
+                None => {
+                    // Sin más escapes — flush todo el resto de golpe
+                    self.scratch.push_str(&s[i..]);
+                    break;
+                }
             }
         }
         self.scratch.clone()

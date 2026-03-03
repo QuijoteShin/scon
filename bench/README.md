@@ -152,7 +152,8 @@ Each entry documents a change, its algorithmic impact, and measured result.
 | P10 | Depth-skip elimination: child returns `next_index` | O(N) total vs O(N×D) re-scanning | ~5% decode, architecturally correct |
 | P11 | `memchr3(b':', b'"', b'{')` single-pass colon search | O(L/16) single SIMD pass vs 3 sequential scans | ~neutral (lines are short), cleaner code |
 | P12 | Inline `split_top_level` in `parse_delimited_values` | O(V) direct vs O(V) split + O(V) iterate (eliminates `Vec<&str>` alloc) | ~5% decode on Config/DB |
-| P13 | `has_bracket` pre-filter on `ParsedLine` | O(1) bool check vs O(L) `try_array_header` call for ~95% of lines | ~neutral individually, reduces branch misprediction |
+| P13 | `has_bracket` pre-filter on `ParsedLine` | O(1) bool check skips O(L) `try_array_header` for ~95% of lines | ~neutral — evita trabajo innecesario en hot loop |
+| P14 | Chunk-based unescape via `memchr(b'\\')` | O(C) chunks vs O(L) byte-by-byte (C = escape count, C ≪ L) | ~neutral — fast-path already covers ~90% of strings |
 
 **Complexity note on P10:** Before the fix, when `decode_object` called a child recursively, the child processed N lines, then the parent re-scanned the same N lines to find the next sibling (`while depth > base_depth { i++ }`). At depth D, the same line could be scanned D times — O(N×D) total. With the fix, each line is visited exactly once — O(N).
 
