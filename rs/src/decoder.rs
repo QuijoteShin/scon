@@ -616,18 +616,79 @@ impl Decoder {
         if t == "false" { return Value::Bool(false); }
         if t == "null" { return Value::Null; }
 
-        // Fast-path: solo intentar parse numérico si primer byte es dígito, +, -, o .
+        // Parser numérico manual — acumulador byte-level para enteros, stdlib solo para floats
+        // Evita overhead de parse::<i64>() (error allocation, Result branching)
         let first = t.as_bytes()[0];
         if first.is_ascii_digit() || first == b'+' || first == b'-' || first == b'.' {
-            if let Ok(n) = t.parse::<i64>() {
-                return Value::Integer(n);
-            }
-            if let Ok(n) = t.parse::<f64>() {
-                return Value::Float(n);
+            if let Some(val) = self.try_parse_number(t) {
+                return val;
             }
         }
 
         Value::String(t.to_string())
+    }
+
+    // Parser numérico manual — enteros por acumulador byte-level, floats por stdlib (pre-validado)
+    // Enteros son el caso común: evita FromStr + Result + ParseIntError allocation
+    // Floats: validamos formato primero → stdlib parse no falla → no paga error path
+    fn try_parse_number(&self, t: &str) -> Option<Value> {
+        let bytes = t.as_bytes();
+        let len = bytes.len();
+        let mut pos = 0;
+        let neg = bytes[0] == b'-';
+        if neg || bytes[0] == b'+' { pos += 1; }
+        if pos >= len { return None; }
+
+        // Empieza con dígito → integer o float
+        if bytes[pos].is_ascii_digit() {
+            let mut n: u64 = 0;
+            let mut overflow = false;
+
+            while pos < len && bytes[pos].is_ascii_digit() {
+                let d = (bytes[pos] - b'0') as u64;
+                match n.checked_mul(10).and_then(|v| v.checked_add(d)) {
+                    Some(v) => n = v,
+                    None => { overflow = true; break; }
+                }
+                pos += 1;
+            }
+
+            // Entero puro: todos los bytes consumidos, sin overflow
+            if pos == len && !overflow {
+                let val = if neg {
+                    if n > (i64::MAX as u64) + 1 {
+                        return t.parse::<f64>().ok().map(Value::Float);
+                    }
+                    if n == (i64::MAX as u64) + 1 { i64::MIN }
+                    else { -(n as i64) }
+                } else {
+                    if n > i64::MAX as u64 {
+                        return t.parse::<f64>().ok().map(Value::Float);
+                    }
+                    n as i64
+                };
+                return Some(Value::Integer(val));
+            }
+
+            // Punto decimal o exponente → float (stdlib, formato ya validado)
+            if pos < len && (bytes[pos] == b'.' || bytes[pos] == b'e' || bytes[pos] == b'E') {
+                return t.parse::<f64>().ok().map(Value::Float);
+            }
+
+            // Overflow sin punto/exp → float
+            if overflow {
+                return t.parse::<f64>().ok().map(Value::Float);
+            }
+
+            return None;
+        }
+
+        // Empieza con '.' → float
+        if bytes[pos] == b'.' {
+            return t.parse::<f64>().ok().map(Value::Float);
+        }
+
+        None
     }
 
     fn unquote_key(&mut self, s: &str) -> String {
