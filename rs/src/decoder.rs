@@ -68,10 +68,14 @@ impl Decoder {
             if trimmed.starts_with("sec:") { continue; }
             let spaces = line.len() - line.trim_start_matches(' ').len();
             let depth = if indent > 0 { spaces / indent } else { 0 };
+            // Pre-filtro: '[' antes de ':' → candidato a array header (~5% de líneas)
+            let has_bracket = memchr(b'[', trimmed.as_bytes())
+                .map_or(false, |bp| memchr(b':', trimmed.as_bytes()).map_or(false, |cp| bp < cp));
             parsed.push(ParsedLine {
                 depth,
                 content: trimmed,
                 _line_num: line_num,
+                has_bracket,
             });
         }
 
@@ -138,7 +142,7 @@ impl Decoder {
                 let segment = input[seg_start..i - semi_count + 1].trim();
                 if !segment.is_empty() && !segment.starts_with('#') {
                     if !(segment.starts_with("@@") || segment.starts_with("s:") || segment.starts_with("r:") || segment.starts_with("sec:") || segment.starts_with("@use ")) {
-                        parsed.push(ParsedLine { depth, content: segment, _line_num: line_num });
+                        parsed.push(ParsedLine { depth, content: segment, _line_num: line_num, has_bracket: memchr(b'[', segment.as_bytes()).map_or(false, |bp| memchr(b':', segment.as_bytes()).map_or(false, |cp| bp < cp)) });
                         line_num += 1;
 
                         // Scope openers: key: → depth+1
@@ -169,7 +173,7 @@ impl Decoder {
         let segment = input[seg_start..].trim();
         if !segment.is_empty() && !segment.starts_with('#') {
             if !(segment.starts_with("@@") || segment.starts_with("s:") || segment.starts_with("r:") || segment.starts_with("sec:") || segment.starts_with("@use ")) {
-                parsed.push(ParsedLine { depth, content: segment, _line_num: line_num });
+                parsed.push(ParsedLine { depth, content: segment, _line_num: line_num, has_bracket: memchr(b'[', segment.as_bytes()).map_or(false, |bp| memchr(b':', segment.as_bytes()).map_or(false, |cp| bp < cp)) });
             }
         }
 
@@ -221,13 +225,15 @@ impl Decoder {
 
             let content = line.content;
 
-            //P1.4: Try parse_array_header directly — single pass instead of is+parse
-            if let Some(header) = self.try_array_header(content) {
-                if let Some(key) = header.key {
-                    let (val, next_i) = self.decode_array_from_header(i, lines, &header)?;
-                    result.insert(key.to_string(), val);
-                    i = next_i;
-                    continue;
+            // has_bracket pre-filtro: skip try_array_header para ~95% de líneas sin '['
+            if line.has_bracket {
+                if let Some(header) = self.try_array_header(content) {
+                    if let Some(key) = header.key {
+                        let (val, next_i) = self.decode_array_from_header(i, lines, &header)?;
+                        result.insert(key.to_string(), val);
+                        i = next_i;
+                        continue;
+                    }
                 }
             }
 
@@ -417,13 +423,15 @@ impl Decoder {
             if next.depth == cont_depth {
                 if next.content.starts_with("- ") { break; }
 
-                //Array header in continuation
-                if let Some(header) = self.try_array_header(next.content) {
-                    if let Some(k) = header.key {
-                        let (val, next_i) = self.decode_array_from_header(i, lines, &header)?;
-                        result.insert(k.to_string(), val);
-                        i = next_i;
-                        continue;
+                //Array header in continuation — has_bracket pre-filtro
+                if next.has_bracket {
+                    if let Some(header) = self.try_array_header(next.content) {
+                        if let Some(k) = header.key {
+                            let (val, next_i) = self.decode_array_from_header(i, lines, &header)?;
+                            result.insert(k.to_string(), val);
+                            i = next_i;
+                            continue;
+                        }
                     }
                 }
 
@@ -886,6 +894,7 @@ struct ParsedLine<'a> {
     depth: usize,
     content: &'a str,
     _line_num: usize,
+    has_bracket: bool, // '[' aparece antes de ':' — pre-filtro para try_array_header (~95% rejection)
 }
 
 // Zero-alloc: todos los campos son slices prestados del input original
