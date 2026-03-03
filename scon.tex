@@ -1,0 +1,1352 @@
+% scon_en_ebnf.tex
+% SCON 1.0 — Specification, Benchmarks, and Token Efficiency Analysis
+% arXiv submission (pdflatex compatible)
+
+\documentclass[11pt, a4paper]{article}
+
+\usepackage[a4paper, top=2.5cm, bottom=2.5cm, left=2cm, right=2cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{syntax}
+
+% EBNF listing style
+\lstdefinelanguage{EBNF}{
+  morekeywords={},
+  morecomment=[l]{(*},
+  morestring=[b]",
+  literate=
+    {::=}{{$::=$}}3
+    {|}{{$\mid$}}1
+    {[}{{$[$}}1
+    {]}{{$]$}}1
+    {\{}{{$\{$}}1
+    {\}}{{$\}$}}1
+    {(}{{$($}}1
+    {)}{{$)$}}1
+    {*}{{$*$}}1
+    {+}{{$^+$}}1
+}
+
+\lstdefinestyle{ebnf}{
+  language=EBNF,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\bfseries,
+  commentstyle=\itshape\color{gray},
+  stringstyle=\color{teal},
+  frame=none,
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  xleftmargin=1em,
+  aboveskip=0.5em,
+  belowskip=0.5em,
+}
+
+\lstdefinestyle{scon}{
+  basicstyle=\ttfamily\small,
+  frame=single,
+  backgroundcolor=\color{gray!8},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  xleftmargin=1em,
+  aboveskip=0.5em,
+  belowskip=0.5em,
+}
+
+\title{\textbf{SCON: A Textual Serialization Format with Structural Deduplication,}\\
+\textbf{Tabular Encoding, and Token-Efficient Representation}}
+\author{Gustavo Moura \\
+\small CIFRID \\
+\small \texttt{moura@cifrid.com}}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+SCON (Structured Compact Object Notation) is a human-readable,
+text-based serialization format designed as a compact alternative
+to JSON for payload-sensitive workloads.
+Tabular encoding eliminates repeated keys in uniform arrays,
+and optional structural deduplication (via Merkle-style hashing)
+factorizes recurring subtrees into named references.
+Benchmarks on canonical datasets show payloads 13--29\% smaller than
+JSON without deduplication (up to 66\% with deduplication), while
+reducing transport-layer compression CPU by 8--53\%.
+A break-even analysis demonstrates that byte savings offset the
+additional parsing cost on links below $\sim$100\,Mbps, a regime
+common in IoT telemetry, mobile networks, and satellite backhaul.
+On an industrial telemetry workload (10K sensor readings), SCON's
+tabular mode reduces payload size by 53\% vs JSON.
+Structural deduplication also reduces LLM tokenization cost:
+on an OpenAPI specification, SCON produces 64\% fewer tokens than
+the equivalent JSON under the \texttt{cl100k\_base} tokenizer,
+enabling more efficient use of LLM context windows.
+This paper presents the formal grammar (EBNF), reference
+implementations in Rust, PHP, and JavaScript, and a quantitative
+evaluation of size, speed, and token efficiency trade-offs.
+\end{abstract}
+
+\medskip
+\noindent\textbf{Keywords:}
+serialization format,
+JSON alternative,
+structural deduplication,
+tabular encoding,
+payload optimization,
+IoT serialization,
+industrial telemetry,
+SCADA data compression,
+sensor data format,
+LLM context optimization,
+prompt token reduction,
+dataset serialization,
+edge computing,
+bandwidth-constrained networks
+
+\tableofcontents
+\newpage
+
+%% ============================================================
+\section{Introduction}
+\label{sec:intro}
+
+JSON~\cite{rfc8259} is the dominant data interchange format for web APIs,
+configuration files, and inter-process communication. Its simplicity and
+ubiquitous tooling support are well established. However, JSON exhibits
+structural inefficiencies when serializing repetitive data:
+
+\begin{itemize}
+\item \textbf{Key repetition.} In arrays of homogeneous objects, every
+      element repeats the full key set. A 10\,000-row sensor dataset
+      repeats each field name 10\,000 times.
+\item \textbf{No structural reuse.} Identical subtrees (e.g., shared
+      response schemas in an OpenAPI specification) must be serialized
+      in full at every occurrence.
+\item \textbf{Readability--size trade-off.} JSON requires pretty-printing
+      (2--4$\times$ size increase) to be human-readable; the minified
+      form is compact but opaque.
+\end{itemize}
+
+\noindent SCON (Structured Compact Object Notation) addresses these
+limitations with three mechanisms:
+
+\begin{enumerate}
+\item \textbf{Tabular encoding:} Arrays of uniform objects are serialized
+      with a single header row followed by value-only data rows,
+      eliminating $R \times K$ key repetitions.
+\item \textbf{Structural deduplication:} A Merkle-style fingerprinting
+      pass identifies repeated subtrees and replaces them with named
+      schema references (\texttt{@s:name}), reducing both bytes and
+      LLM tokens.
+\item \textbf{Indentation-based structure:} The standard form is
+      human-readable without pretty-printing overhead; a reversible
+      minification (semicolon-based depth encoding) provides a compact
+      wire format.
+\end{enumerate}
+
+\subsection{Contributions}
+
+This paper makes the following contributions:
+
+\begin{enumerate}
+\item A formal grammar specification (EBNF) for SCON~1.0, covering
+      standard, minified, and schema-augmented representations
+      (Sections~\ref{sec:notation}--\ref{sec:summary}).
+\item Reference implementations in three languages (Rust, PHP,
+      JavaScript) with cross-language roundtrip verification on
+      canonical fixtures.
+\item A quantitative evaluation of payload size, encode/decode
+      throughput, transport-layer compression cost, and LLM token
+      efficiency against JSON
+      (Sections~\ref{sec:performance}--\ref{sec:roadmap}).
+\item A break-even analysis identifying the network bandwidth threshold
+      at which SCON's byte savings offset its parsing overhead.
+\end{enumerate}
+
+\subsection{Scope and Non-Goals}
+
+SCON is designed for \textbf{structured data serialization} in
+network-bound and storage-bound scenarios: API payloads, configuration,
+telemetry, and LLM context packing. It is \emph{not} a replacement for:
+
+\begin{itemize}
+\item Binary formats (CBOR, MessagePack, Protocol Buffers) where
+      human readability is not required.
+\item General-purpose programming language data models (JSON Schema
+      validation, static type systems).
+\item Document markup languages (XML, HTML).
+\end{itemize}
+
+%% ============================================================
+\section{Related Work}
+\label{sec:related}
+
+Table~\ref{tab:related} compares SCON against established serialization
+formats across twelve features relevant to payload optimization and
+developer ergonomics.
+
+\begin{table}[ht]
+\centering
+\caption{Feature comparison across serialization formats.
+         $\bullet$ = yes, $\circ$ = partial, --- = no.}
+\label{tab:related}
+\small
+\begin{tabular}{l cccccccc c}
+\toprule
+Feature & JSON & JSON5 & HJSON & YAML & TOML & Ion & CBOR & MsgPk & \textbf{SCON} \\
+\midrule
+Human-readable       & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & --- & --- & $\bullet$ \\
+Comments             & --- & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & --- & --- & $\bullet$ \\
+Built-in schemas     & --- & --- & --- & --- & --- & $\bullet$ & $\circ$ & --- & $\bullet$ \\
+Structural dedup     & --- & --- & --- & $\circ$ & --- & --- & --- & --- & $\bullet$ \\
+Tabular encoding     & --- & --- & --- & --- & --- & --- & --- & --- & $\bullet$ \\
+Import mechanism     & --- & --- & --- & --- & --- & --- & --- & --- & $\bullet$ \\
+Minified form        & $\bullet$ & $\bullet$ & --- & --- & $\circ$ & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ \\
+Unquoted keys        & --- & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & $\bullet$ & --- & --- & $\bullet$ \\
+Canonical form       & $\circ$ & --- & --- & $\circ$ & --- & $\bullet$ & $\bullet$ & $\circ$ & $\bullet$ \\
+Binary variant       & --- & --- & --- & --- & --- & $\bullet$ & $\bullet$ & $\bullet$ & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent \textbf{Key differentiators:}
+
+\begin{description}
+\item[vs.\ YAML anchors.]
+  YAML supports manual node reuse via anchors (\texttt{\&}/\texttt{*}),
+  but the author must identify and annotate duplicates by hand.
+  SCON's \texttt{autoExtract} detects structural repetition
+  algorithmically via Merkle fingerprinting, requiring zero annotation.
+
+\item[vs.\ binary formats (CBOR, MessagePack, Ion).]
+  Binary formats achieve smaller payloads and faster parsing at the
+  cost of human readability. SCON occupies a different point in the
+  design space: text-based and human-readable, yet 13--66\% smaller
+  than JSON through structural techniques rather than binary encoding.
+
+\item[vs.\ JSON5/HJSON/TOML.]
+  These formats improve JSON ergonomics (comments, trailing commas,
+  unquoted keys) but do not address payload size. None offers
+  tabular encoding, structural deduplication, or a minified
+  wire format.
+
+\item[vs.\ Amazon Ion.]
+  Ion provides both text and binary representations with a schema
+  language (ISL). SCON's schema definitions are embedded in the
+  document itself and support reference patching (overrides),
+  enabling structural composition absent in ISL.
+\end{description}
+
+%% ============================================================
+%% FORMAL GRAMMAR begins here
+%% ============================================================
+
+\section{Formal Grammar --- Notation Conventions}
+\label{sec:notation}
+
+\begin{tabular}{ll}
+\toprule
+Symbol & Meaning \\
+\midrule
+\texttt{::=}   & Production rule definition \\
+\texttt{|}     & Alternation (ordered choice) \\
+\texttt{[ ]}   & Optional (zero or one) \\
+\texttt{\{ \}} & Repetition (zero or more) \\
+\texttt{( )}   & Grouping \\
+\texttt{" "}   & Terminal string literal \\
+\texttt{? ?}   & Special sequence (prose description) \\
+\texttt{-}     & Exception (set difference) \\
+\bottomrule
+\end{tabular}
+
+\medskip
+\noindent Whitespace within productions is not significant unless enclosed in terminals.
+The notation \textsc{INDENT}($n$) denotes exactly $n$ space characters (\texttt{U+0020})
+at the start of a line. Tabs are not permitted for indentation.
+
+%% ============================================================
+\section{Document Structure}
+\label{sec:document}
+
+\begin{lstlisting}[style=ebnf]
+document       ::= [ header NL ] { directive NL } body EOF
+
+header         ::= "#!scon/" version
+version        ::= DIGIT+ "." DIGIT+
+
+body           ::= value
+\end{lstlisting}
+
+\noindent The header \texttt{\#!scon/1.0} is optional. When present, it identifies
+the format version and enables tooling auto-detection. The encoder emits the header
+only when explicitly requested (\texttt{includeHeader: true}).
+
+%% ============================================================
+\section{Directives}
+\label{sec:directives}
+
+\begin{lstlisting}[style=ebnf]
+directive      ::= "@@" directive_name [ "(" directive_arg ")" ]
+directive_name ::= ALPHA { ALPHA | DIGIT | "_" }
+directive_arg  ::= ? any characters except ")" ?
+\end{lstlisting}
+
+\noindent Directives modify parser behavior for the enclosing scope:
+
+\begin{lstlisting}[style=scon]
+@@strict
+@@enforce(openapi:3.1)
+\end{lstlisting}
+
+\noindent \texttt{@@strict} enables contract validation: objects instantiated from
+a schema reference reject undeclared fields and require mandatory fields
+(marked with \texttt{!}).
+
+%% ============================================================
+\section{Imports}
+\label{sec:imports}
+
+\begin{lstlisting}[style=ebnf]
+import_stmt    ::= "@use" SP path
+path           ::= ? relative or absolute file path ?
+\end{lstlisting}
+
+\noindent Imports load external schema definitions into the current
+\texttt{SchemaRegistry} before body parsing begins.
+
+%% ============================================================
+\section{Values}
+\label{sec:values}
+
+\begin{lstlisting}[style=ebnf]
+value          ::= primitive
+               |   object
+               |   array
+               |   schema_ref
+
+primitive      ::= null | boolean | number | string
+
+null           ::= "null"
+boolean        ::= "true" | "false"
+number         ::= integer | float
+integer        ::= [ "-" ] DIGIT+
+float          ::= [ "-" ] DIGIT+ "." DIGIT+ [ exponent ]
+exponent       ::= ( "e" | "E" ) [ "+" | "-" ] DIGIT+
+\end{lstlisting}
+
+%% ============================================================
+\section{Strings}
+\label{sec:strings}
+
+\begin{lstlisting}[style=ebnf]
+string         ::= quoted_string | unquoted_string
+
+quoted_string  ::= '"' { char } '"'
+char           ::= unescaped | escape_seq
+unescaped      ::= ? any Unicode except '"', '\', control ?
+escape_seq     ::= "\" ( '"' | "\" | "/" | "n" | "r"
+                        | "t" | ";" | "b" | "f"
+                        | "u" HEX HEX HEX HEX )
+
+unquoted_string ::= ? non-empty sequence of characters that:
+                       - does not start with '"'
+                       - does not start with a reserved prefix
+                       - does not contain unescaped ','
+                         in tabular/inline context
+                       - is trimmed of leading/trailing whitespace ?
+\end{lstlisting}
+
+\subsection{Quoting Rules}
+\label{sec:quoting}
+
+A value \textbf{must} be quoted when it:
+\begin{itemize}
+\item Equals a reserved literal (\texttt{null}, \texttt{true}, \texttt{false})
+      and the intended type is string.
+\item Contains a leading or trailing space that is semantically significant.
+\item Contains the delimiter character (\texttt{,} in inline/tabular contexts).
+\item Contains a semicolon (\texttt{;}) in minified representation.
+\item Parses as a number but the intended type is string (e.g., \texttt{"007"}).
+\end{itemize}
+
+\subsection{Escape Sequences}
+\label{sec:escapes}
+
+\begin{tabular}{lll}
+\toprule
+Sequence & Character & Unicode \\
+\midrule
+\texttt{\textbackslash"} & Double quote & U+0022 \\
+\texttt{\textbackslash\textbackslash} & Backslash & U+005C \\
+\texttt{\textbackslash n} & Line feed & U+000A \\
+\texttt{\textbackslash r} & Carriage return & U+000D \\
+\texttt{\textbackslash t} & Horizontal tab & U+0009 \\
+\texttt{\textbackslash ;} & Literal semicolon & U+003B \\
+\texttt{\textbackslash b} & Backspace & U+0008 \\
+\texttt{\textbackslash f} & Form feed & U+000C \\
+\texttt{\textbackslash /} & Solidus & U+002F \\
+\texttt{\textbackslash uXXXX} & Unicode code point & U+XXXX \\
+\bottomrule
+\end{tabular}
+
+\medskip
+\noindent The \texttt{\textbackslash ;} escape is unique to SCON and is required
+in minified mode to distinguish a literal semicolon from the structural dedent
+delimiter.
+
+%% ============================================================
+\section{Keys}
+\label{sec:keys}
+
+\begin{lstlisting}[style=ebnf]
+key            ::= unquoted_key | quoted_key
+unquoted_key   ::= KEY_CHAR { KEY_CHAR }
+quoted_key     ::= '"' { char } '"'
+KEY_CHAR       ::= ALPHA | DIGIT | "_" | "-" | "." | "$"
+                 | "/" | "~" | "@"
+\end{lstlisting}
+
+\noindent Keys \textbf{must} be quoted when they:
+\begin{itemize}
+\item Contain spaces, colons, or brackets.
+\item Match a reserved literal (\texttt{null}, \texttt{true}, \texttt{false}).
+\item Start with \texttt{-} (conflicts with array item prefix).
+\item Contain characters outside the \texttt{KEY\_CHAR} set.
+\end{itemize}
+
+\noindent A key followed by \texttt{!} denotes a mandatory field in schema definitions:
+
+\begin{lstlisting}[style=ebnf]
+mandatory_key  ::= key "!"
+\end{lstlisting}
+
+%% ============================================================
+\section{Objects}
+\label{sec:objects}
+
+\begin{lstlisting}[style=ebnf]
+object         ::= { INDENT(n) key_value NL }
+
+key_value      ::= key ":" SP value_or_block
+
+value_or_block ::= inline_value
+               |   NL nested_block
+
+inline_value   ::= primitive | inline_array | schema_ref
+
+nested_block   ::= object | array
+\end{lstlisting}
+
+\noindent Objects are defined by indentation level. All key-value pairs at the same
+indentation depth belong to the same object. A key followed by \texttt{:} with no
+inline value introduces a nested block at depth $n+1$.
+
+\begin{lstlisting}[style=scon]
+server:
+ host: localhost
+ port: 8080
+ tls:
+  enabled: true
+  cert: /etc/ssl/cert.pem
+\end{lstlisting}
+
+%% ============================================================
+\section{Arrays}
+\label{sec:arrays}
+
+SCON supports three array representations, each optimized for a different data shape.
+
+\subsection{Expanded Arrays (List Items)}
+\label{sec:expanded-arrays}
+
+\begin{lstlisting}[style=ebnf]
+expanded_array ::= { INDENT(n) "- " array_item NL }
+
+array_item     ::= primitive
+               |   schema_ref
+               |   inline_object_start NL expanded_object
+               |   NL nested_block
+
+inline_object_start ::= key ":" SP inline_value
+\end{lstlisting}
+
+\noindent Each item is prefixed with \texttt{-~} (dash + space). Objects within
+list items begin their first key-value pair on the same line as the dash:
+
+\begin{lstlisting}[style=scon]
+users:
+ - name: Alice
+   role: admin
+ - name: Bob
+   role: viewer
+\end{lstlisting}
+
+\subsection{Inline Arrays}
+\label{sec:inline-arrays}
+
+\begin{lstlisting}[style=ebnf]
+inline_array   ::= "[" count "]" ":" SP value_list
+value_list     ::= inline_value { "," SP inline_value }
+count          ::= DIGIT+
+\end{lstlisting}
+
+\noindent The count $N$ declares the number of elements. Values are
+comma-separated on a single line:
+
+\begin{lstlisting}[style=scon]
+tags[3]: web, api, rest
+ports[4]: 80, 443, 8080, 8443
+\end{lstlisting}
+
+\subsection{Tabular Arrays}
+\label{sec:tabular-arrays}
+
+\begin{lstlisting}[style=ebnf]
+tabular_array  ::= tabular_header NL { INDENT(n+1) data_row NL }
+
+tabular_header ::= key "[" row_count "]" "{" field_list "}" ":"
+
+field_list     ::= field_name { "," SP field_name }
+field_name     ::= key
+
+row_count      ::= DIGIT+
+
+data_row       ::= inline_value { "," SP inline_value }
+\end{lstlisting}
+
+\noindent Tabular encoding compacts arrays of homogeneous objects. The header
+declares field names once; each subsequent line contains only the values
+in corresponding order:
+
+\begin{lstlisting}[style=scon]
+users[3]{id, name, role}:
+ 1, Alice, admin
+ 2, Bob, editor
+ 3, Carol, viewer
+\end{lstlisting}
+
+\noindent \textbf{Detection heuristic.} The encoder activates tabular mode when:
+\begin{enumerate}
+\item All items in the array are objects.
+\item All objects share the same key set (uniform structure).
+\item All values are primitives (no nested objects or arrays).
+\item The array contains $\geq 2$ items.
+\end{enumerate}
+
+\noindent When any condition fails---e.g., objects have optional fields,
+mixed schemas, or nested values---the encoder falls back to
+\emph{expanded} format (one \texttt{- key: value} block per item),
+which preserves correctness but does not eliminate key repetition.
+Tabular savings are therefore data-dependent: arrays of uniform,
+flat objects (database rows, sensor readings, log entries) benefit
+most, while sparse or polymorphic arrays see no tabular advantage.
+
+%% ============================================================
+\section{Schema Definitions}
+\label{sec:schema-defs}
+
+\begin{lstlisting}[style=ebnf]
+schema_block   ::= schema_header NL INDENT(n+1) object
+
+schema_header  ::= block_prefix ":" key ":"
+block_prefix   ::= "s" | "r" | "sec"
+\end{lstlisting}
+
+\noindent Three block types share the same syntax:
+
+\begin{tabular}{lll}
+\toprule
+Prefix & Name & Purpose \\
+\midrule
+\texttt{s:} & Schema & Reusable object template \\
+\texttt{r:} & Response & Response group (API contexts) \\
+\texttt{sec:} & Security & Security scheme definition \\
+\bottomrule
+\end{tabular}
+
+\begin{lstlisting}[style=scon]
+s:UserBase:
+ id!: 0
+ name!: ""
+ email: null
+ role: viewer
+\end{lstlisting}
+
+\noindent Fields marked with \texttt{!} are mandatory. When \texttt{@@strict} is
+active, instances must include all mandatory fields.
+
+%% ============================================================
+\section{Schema References and Overrides}
+\label{sec:schema-refs}
+
+\begin{lstlisting}[style=ebnf]
+schema_ref     ::= "@s:" schema_name [ SP override_block ]
+               |   polymorphic_ref
+
+schema_name    ::= ALPHA { ALPHA | DIGIT | "_" | "-" }
+
+polymorphic_ref ::= schema_ref SP "|" SP schema_ref
+                    { SP "|" SP schema_ref }
+\end{lstlisting}
+
+\subsection{Override Syntax}
+\label{sec:overrides}
+
+\begin{lstlisting}[style=ebnf]
+override_block ::= { INDENT(n+1) override_entry NL }
+
+override_entry ::= field_override | removal
+
+field_override ::= dot_path ":" SP value_or_block
+dot_path       ::= key { "." key }
+
+removal        ::= "-" key
+\end{lstlisting}
+
+\noindent Overrides enable structural patching of schema instances:
+
+\begin{lstlisting}[style=scon]
+admin: @s:UserBase
+ role: admin
+ permissions:
+  - manage_users
+  - manage_system
+ -email
+\end{lstlisting}
+
+\noindent In this example:
+\begin{itemize}
+\item \texttt{role: admin} overrides the default \texttt{viewer}.
+\item \texttt{permissions:} adds a new nested field.
+\item \texttt{-email} removes the \texttt{email} field from the instance.
+\end{itemize}
+
+\subsection{Deep Override (Dot-Path)}
+
+\begin{lstlisting}[style=scon]
+service: @s:ServiceConfig
+ database.pool.max: 50
+ database.pool.timeout: 5000
+ -database.pool.debug
+\end{lstlisting}
+
+\noindent Dot-path notation traverses nested objects without redefining the
+full subtree.
+
+\subsection{Polymorphic Composition}
+
+\begin{lstlisting}[style=scon]
+endpoint: @s:BaseEndpoint | @s:AuthMixin | @s:CacheMixin
+ path: /api/users
+\end{lstlisting}
+
+\noindent The pipe operator \texttt{|} merges multiple schemas left-to-right.
+Later schemas override earlier ones on key conflicts.
+
+%% ============================================================
+\section{Minified Representation}
+\label{sec:minification}
+
+\begin{lstlisting}[style=ebnf]
+minified_doc   ::= { token }
+
+token          ::= key_value_min | array_item_min
+               |   dedent_seq | quoted_string
+               |   header | directive
+
+key_value_min  ::= key ":" SP inline_value ";"
+
+dedent_seq     ::= ";" { ";" }
+\end{lstlisting}
+
+\noindent The minification algorithm replaces indentation and newlines with a
+unary semicolon encoding:
+
+\begin{enumerate}
+\item A single \texttt{;} separates sibling entries at the same depth
+      (equivalent to a newline).
+\item A sequence of $N$ semicolons ($N \geq 2$) represents a dedent of
+      $N-1$ levels in the tree hierarchy.
+\end{enumerate}
+
+\noindent \textbf{Examples:}
+
+\begin{tabular}{ll}
+\toprule
+Semicolons & Meaning \\
+\midrule
+\texttt{;} ($N{=}1$)  & Next sibling (same depth) \\
+\texttt{;;} ($N{=}2$) & Close current level, next sibling of parent \\
+\texttt{;;;} ($N{=}3$) & Close 2 levels, next sibling of grandparent \\
+\bottomrule
+\end{tabular}
+
+\medskip
+\noindent \textbf{Standard form:}
+\begin{lstlisting}[style=scon]
+server:
+ host: localhost
+ port: 8080
+ tls:
+  enabled: true
+  cert: /etc/ssl/cert.pem
+database:
+ host: db.local
+\end{lstlisting}
+
+\noindent \textbf{Minified form:}
+\begin{lstlisting}[style=scon]
+server:host: localhost;port: 8080;tls:enabled: true;cert: /etc/ssl/cert.pem;;;database:host: db.local
+\end{lstlisting}
+
+\noindent The three semicolons \texttt{;;;} after \texttt{cert} dedent
+2~levels: from depth~2 (\texttt{tls} children) back to depth~0
+(\texttt{database} is a sibling of \texttt{server}).
+
+\subsection{Reversibility Property}
+
+The minification is fully reversible:
+
+$$\texttt{expand}(\texttt{minify}(S)) \equiv S$$
+
+\noindent because the unary encoding preserves exact tree depth at every
+position. The \texttt{expand} function reconstructs indentation by
+maintaining a depth counter and emitting $d$ spaces per line.
+
+%% ============================================================
+\section{Delimiter Variants}
+\label{sec:delimiters}
+
+\begin{lstlisting}[style=ebnf]
+delimiter      ::= "," | "|" | TAB
+\end{lstlisting}
+
+\noindent In inline and tabular arrays, SCON supports three delimiter
+characters. The default is comma (\texttt{,}). Pipe (\texttt{|}) and
+tab (\texttt{TAB}) are recognized during decoding to support legacy
+and TSV-compatible data sources.
+
+%% ============================================================
+\section{Comments}
+\label{sec:comments}
+
+\begin{lstlisting}[style=ebnf]
+comment        ::= "#" { ? any character except NL ? } NL
+\end{lstlisting}
+
+\noindent Comments begin with \texttt{\#} and extend to the end of the line.
+They are permitted at any indentation level and are discarded during parsing.
+The header line \texttt{\#!scon/1.0} is a special case: the \texttt{\#!}
+prefix distinguishes it from regular comments.
+
+%% ============================================================
+\section{Lexical Elements}
+\label{sec:lexical}
+
+\begin{lstlisting}[style=ebnf]
+NL             ::= U+000A | U+000D U+000A
+SP             ::= U+0020
+TAB            ::= U+0009
+INDENT(n)      ::= SP * n
+DIGIT          ::= "0" | "1" | ... | "9"
+HEX            ::= DIGIT | "a" | ... | "f" | "A" | ... | "F"
+ALPHA          ::= "a" | ... | "z" | "A" | ... | "Z"
+EOF            ::= ? end of input ?
+\end{lstlisting}
+
+\noindent \textbf{Indentation rules:}
+\begin{itemize}
+\item Only space characters (\texttt{U+0020}) are valid for indentation.
+\item Tab characters are rejected in indentation context.
+\item Each indentation level corresponds to exactly 1~space by convention,
+      though the parser accepts any consistent increment.
+\item The root level is depth~0 (no leading spaces).
+\end{itemize}
+
+%% ============================================================
+\section{Auto-Extracted Schemas}
+\label{sec:autoextract}
+
+The \texttt{autoExtract} pipeline is not part of the grammar per se, but
+produces valid SCON output by:
+
+\begin{enumerate}
+\item Traversing the data tree and computing xxHash128 fingerprints for
+      each subtree.
+\item Identifying structures that appear $\geq 2$ times with identical
+      fingerprints.
+\item Extracting repeated structures as named schema definitions
+      (\texttt{s:auto\_$N$}).
+\item Replacing occurrences with schema references (\texttt{@s:auto\_$N$}).
+\item Pruning orphan schemas (schemas with $< 2$ active references).
+\end{enumerate}
+
+\noindent The resulting document is syntactically valid SCON with schema
+blocks prepended to the body.
+
+%% ============================================================
+\section{Complete Grammar Summary}
+\label{sec:summary}
+
+For reference, the complete grammar is presented below without commentary.
+
+\begin{lstlisting}[style=ebnf]
+(* SCON 1.0 -- Complete EBNF *)
+
+document       ::= [ header NL ] { directive NL }
+                   { import_stmt NL } { schema_block NL }
+                   body EOF
+
+header         ::= "#!scon/" version
+version        ::= DIGIT+ "." DIGIT+
+
+directive      ::= "@@" directive_name [ "(" directive_arg ")" ]
+import_stmt    ::= "@use" SP path
+
+body           ::= value
+
+value          ::= primitive | object | array | schema_ref
+
+primitive      ::= null | boolean | number | string
+null           ::= "null"
+boolean        ::= "true" | "false"
+integer        ::= [ "-" ] DIGIT+
+float          ::= [ "-" ] DIGIT+ "." DIGIT+ [ exponent ]
+exponent       ::= ( "e" | "E" ) [ "+" | "-" ] DIGIT+
+number         ::= integer | float
+
+string         ::= quoted_string | unquoted_string
+quoted_string  ::= '"' { char } '"'
+char           ::= unescaped | escape_seq
+escape_seq     ::= "\" ( '"' | "\" | "/" | "n" | "r"
+                        | "t" | ";" | "b" | "f"
+                        | "u" HEX HEX HEX HEX )
+
+key            ::= unquoted_key | quoted_key
+unquoted_key   ::= KEY_CHAR { KEY_CHAR }
+quoted_key     ::= '"' { char } '"'
+mandatory_key  ::= key "!"
+
+object         ::= { INDENT(n) key_value NL }
+key_value      ::= key ":" SP value_or_block
+value_or_block ::= inline_value | NL nested_block
+
+expanded_array ::= { INDENT(n) "- " array_item NL }
+inline_array   ::= "[" count "]" ":" SP value_list
+tabular_array  ::= tabular_header NL
+                    { INDENT(n+1) data_row NL }
+tabular_header ::= key "[" row_count "]"
+                    "{" field_list "}" ":"
+array          ::= expanded_array | inline_array
+                 | tabular_array
+
+schema_block   ::= block_prefix ":" key ":" NL
+                    INDENT(n+1) object
+block_prefix   ::= "s" | "r" | "sec"
+
+schema_ref     ::= "@s:" schema_name
+                    [ SP override_block ]
+               |   polymorphic_ref
+polymorphic_ref ::= schema_ref SP "|" SP schema_ref
+                    { SP "|" SP schema_ref }
+override_entry ::= dot_path ":" SP value_or_block
+               |   "-" key
+dot_path       ::= key { "." key }
+
+comment        ::= "#" { ? any char except NL ? } NL
+
+(* Minified representation *)
+dedent_seq     ::= ";" { ";" }
+\end{lstlisting}
+
+%% ============================================================
+\section{Conformance Levels}
+\label{sec:conformance}
+
+A SCON implementation may declare conformance at one of three levels:
+
+\begin{description}
+\item[Level 1 --- Core.]
+  Supports primitives, objects, expanded arrays, inline arrays, and
+  minification/expansion. Sufficient for basic serialization.
+
+\item[Level 2 --- Tabular.]
+  Level~1 plus tabular array detection (encoder) and parsing (decoder).
+  Required for payload-size claims.
+
+\item[Level 3 --- Full.]
+  Level~2 plus schema definitions, schema references with overrides,
+  polymorphic composition, directives, imports, and \texttt{autoExtract}
+  structural deduplication.
+\end{description}
+
+\noindent The Rust implementation is Level~2. The PHP and JavaScript
+implementations are Level~3.
+
+%% ============================================================
+\section{Performance Trade-offs}
+\label{sec:performance}
+
+SCON's design trades parsing speed for payload compactness and human readability.
+This section quantifies the trade-off using Rust-native benchmarks
+(\texttt{serde\_json} vs \texttt{scon-core}), which provide the fairest
+format-versus-format comparison since both sides are compiled code.
+
+\subsection{Observed Ratios}
+\label{sec:ratios}
+
+All measurements use three canonical fixtures (OpenAPI Specs 49\,KB, Config
+Records 73\,KB, DB Exports 20\,KB) at 200 iterations on the same host.
+Both \texttt{serde\_json} and \texttt{scon-core} are compiled Rust;
+this isolates format-specific overhead from language runtime differences.
+
+\begin{table}[ht]
+\centering
+\caption{Rust-native encode/decode overhead (median, ms). Current
+         implementation with two allocation patches applied
+         (see Section~\ref{sec:impl-overhead}).}
+\label{tab:rust-overhead}
+\begin{tabular}{l rr c rr c}
+\toprule
+Dataset & \multicolumn{2}{c}{Encode (ms)} & Ratio
+        & \multicolumn{2}{c}{Decode (ms)} & Ratio \\
+        & JSON & SCON & & JSON & SCON & \\
+\midrule
+OpenAPI Specs   & 0.061 & 0.099 & 1.6$\times$ & 0.343 & 0.953 & 2.8$\times$ \\
+Config Records  & 0.087 & 0.187 & 2.2$\times$ & 0.457 & 1.130 & 2.5$\times$ \\
+DB Exports      & 0.022 & 0.075 & 3.4$\times$ & 0.091 & 0.312 & 3.4$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[ht]
+\centering
+\caption{Payload size comparison (bytes).}
+\label{tab:payload-size}
+\begin{tabular}{l rrr r}
+\toprule
+Dataset & JSON & SCON(min) & SCON(dedup+min) & Saving vs JSON \\
+\midrule
+OpenAPI Specs   & 49\,067 & 42\,768 & 16\,600 & $-13\%$ / $-66\%$ \\
+Config Records  & 73\,183 & 67\,049 & --- & $-8\%$ \\
+DB Exports      & 19\,688 & 13\,917 & 13\,917 & $-29\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent In the current implementation, SCON encoding is 1.6--3.4$\times$ slower and
+decoding is 2.5--3.4$\times$ slower than \texttt{serde\_json}. Payload size is
+8--29\% smaller without deduplication; up to 66\% smaller with structural
+deduplication enabled. Section~\ref{sec:impl-overhead} analyses the sources
+of this overhead and demonstrates that it is dominated by implementation
+choices rather than format complexity.
+
+\subsection{Break-Even Inequality}
+\label{sec:breakeven}
+
+SCON compensates its CPU overhead when the byte savings reduce transmission
+time by more than the additional processing cost. For a single
+request--response cycle, the net latency change is:
+
+\begin{equation}
+\label{eq:breakeven}
+\Delta t = \underbrace{(\Delta t_{\text{enc}} + \Delta t_{\text{dec}})}_{\text{CPU overhead}}
+         - \underbrace{\frac{\Delta B}{\mathit{BW}}}_{\text{transmission savings}}
+\end{equation}
+
+\noindent where:
+\begin{itemize}
+\item $\Delta t_{\text{enc}} = t_{\text{enc}}^{\text{SCON}} - t_{\text{enc}}^{\text{JSON}}$
+      \quad (additional encode time),
+\item $\Delta t_{\text{dec}} = t_{\text{dec}}^{\text{SCON}} - t_{\text{dec}}^{\text{JSON}}$
+      \quad (additional decode time),
+\item $\Delta B = B_{\text{JSON}} - B_{\text{SCON}}$
+      \quad (bytes saved),
+\item $\mathit{BW}$ is the effective link bandwidth.
+\end{itemize}
+
+\noindent SCON yields a net latency improvement when $\Delta t < 0$, i.e.:
+
+\begin{equation}
+\label{eq:breakeven-condition}
+\boxed{\;\Delta t_{\text{enc}} + \Delta t_{\text{dec}} \;<\; \frac{\Delta B}{\mathit{BW}}\;}
+\end{equation}
+
+\subsection{End-to-End Latency by Network Scenario}
+\label{sec:e2e}
+
+Table~\ref{tab:e2e} applies inequality~\eqref{eq:breakeven-condition} to the
+OpenAPI Specs dataset ($\Delta B = 6\,297$\,B without dedup;
+$\Delta B = 32\,234$\,B with dedup) across representative network profiles.
+CPU overhead: $\Delta t_{\text{enc}} = 0.038$\,ms,
+$\Delta t_{\text{dec}} = 0.610$\,ms, total $= 0.648$\,ms.
+
+\begin{table}[ht]
+\centering
+\caption{End-to-end latency estimate --- OpenAPI Specs (49\,KB).
+         $t_{\text{total}} = t_{\text{enc}} + t_{\text{tx}} + t_{\text{dec}}$.
+         Negative $\Delta t$ means SCON is faster end-to-end.}
+\label{tab:e2e}
+\begin{tabular}{l c rr rr r}
+\toprule
+Scenario & BW & \multicolumn{2}{c}{JSON (ms)} & \multicolumn{2}{c}{SCON min (ms)} & $\Delta t$ \\
+         &    & enc+dec & tx & enc+dec & tx & (ms) \\
+\midrule
+\textbf{LAN}
+  & 1\,Gbps   & 0.404 & 0.39 & 1.052 & 0.34 & $+0.60$ \\
+\textbf{WAN}
+  & 100\,Mbps & 0.404 & 3.93 & 1.052 & 3.42 & $+0.14$ \\
+\textbf{Mobile}
+  & 10\,Mbps  & 0.404 & 39.3 & 1.052 & 34.2 & $-4.39$ \\
+\midrule
+\multicolumn{7}{l}{\textit{With structural deduplication} (SCON dedup+min, 17\,KB):} \\
+\midrule
+LAN     & 1\,Gbps   & 0.404 & 0.39 & 1.052 & 0.13 & $+0.39$ \\
+WAN     & 100\,Mbps & 0.404 & 3.93 & 1.052 & 1.35 & $-1.93$ \\
+Mobile  & 10\,Mbps  & 0.404 & 39.3 & 1.052 & 13.5 & $-25.1$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent \textbf{Key observations:}
+\begin{enumerate}
+\item Without deduplication, SCON breaks even below $\sim$100\,Mbps and
+      provides a net gain on constrained links.
+\item With structural deduplication, SCON is faster from WAN speeds
+      downward ($-1.92$\,ms at 100\,Mbps).
+\item On mobile links ($\leq$ 10\,Mbps), the transmission savings
+      are an order of magnitude larger than the parsing penalty
+      ($-25$\,ms with dedup).
+\end{enumerate}
+
+\noindent \textbf{Limitations of this model.}
+Equation~\eqref{eq:breakeven} models only serialization cost and raw
+transmission time. Real networks add round-trip latency (RTT), TLS
+handshake, HTTP framing, and congestion-dependent throughput.
+However, these factors are \emph{constant} across serialization
+formats---both JSON and SCON traverse the same TCP/TLS/HTTP stack---so
+they cancel in the differential $\Delta t$.
+The model is therefore valid for comparing the \emph{marginal} effect
+of format choice, not for predicting absolute request latency.
+
+\subsection{Complementarity with Transport-Layer Compression}
+\label{sec:gzip}
+
+A common objection is that transport-layer compression (\texttt{gzip},
+Brotli) already eliminates key redundancy in JSON, making structural
+compaction redundant. While block compression does reduce the final
+wire size, SCON's compaction operates at the \emph{semantic} level
+(on the data tree) whereas \texttt{gzip} operates at the
+\emph{syntactic} level (LZ77 sliding window over raw bytes).
+
+This distinction has a measurable consequence: compression algorithms
+scale their CPU and memory consumption with the size of the
+uncompressed input buffer. By reducing the payload before it reaches
+the transport layer, SCON reduces the computational work that
+\texttt{gzip} must perform. Table~\ref{tab:gzip-cpu} quantifies
+this effect.
+
+\begin{table}[ht]
+\centering
+\caption{CPU time for \texttt{gzencode()} at level~6 (PHP~8, median
+         of 500 iterations). Percentages indicate CPU savings vs
+         compressing the JSON payload.}
+\label{tab:gzip-cpu}
+\begin{tabular}{l rrr rrr}
+\toprule
+Dataset
+  & \multicolumn{3}{c}{gzip time (ms)}
+  & \multicolumn{3}{c}{gzip output (B)} \\
+  & JSON & SCON\textsubscript{min} & SCON\textsubscript{d+m}
+  & JSON & SCON\textsubscript{min} & SCON\textsubscript{d+m} \\
+\midrule
+OpenAPI Specs
+  & 0.171 & 0.153 \scriptsize($-$11\%)
+  & 0.081 \scriptsize($-$53\%)
+  & 1\,295 & 1\,227 & 1\,126 \\
+Config Records
+  & 0.459 & 0.422 \scriptsize($-$8\%)
+  & 0.426 \scriptsize($-$7\%)
+  & 4\,995 & 4\,832 & 4\,866 \\
+DB Exports
+  & 0.111 & 0.091 \scriptsize($-$18\%)
+  & 0.087 \scriptsize($-$22\%)
+  & 1\,473 & 1\,458 & 1\,458 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent SCON reduces gzip CPU time by 8--18\% without deduplication,
+and up to 53\% with structural deduplication on schema-heavy payloads
+(OpenAPI). In high-throughput API gateways where compression runs on
+every response, these savings accumulate across thousands of requests
+per second. SCON thus acts as a semantic pre-compressor: it reduces
+the input that block compression must process, yielding compounding
+benefits in both bandwidth and CPU budget.
+
+SCON's smaller pre-compression footprint may also benefit constrained
+environments (IoT, edge computing) where radio transmission time
+(\emph{Time on Air}) and compression CPU budget are critical resources.
+Quantifying this effect on specific radio protocols (LoRa, BLE) is
+left as future work.
+
+%% ============================================================
+\section{Analysis of Implementation-Specific Overhead}
+\label{sec:impl-overhead}
+
+While Table~\ref{tab:rust-overhead} shows SCON decoding at 2.5--3.4$\times$ the
+cost of \texttt{serde\_json}, a static audit of the Rust reference decoder
+reveals that the dominant costs are avoidable memory allocations, not
+grammar complexity. We identify three categories of \emph{accidental}
+overhead in the current v0.x implementation.
+
+\subsection{Profiled Hotspots}
+\label{sec:hotspots}
+
+\begin{table}[ht]
+\centering
+\caption{Decoder allocation hotspots identified by static code audit.
+         Estimated impact ranges are first-order hypotheses, not measured.}
+\label{tab:hotspots}
+\begin{tabular}{l p{4.5cm} p{3.5cm} l}
+\toprule
+Location & Mechanism & Why removable & Status \\
+\midrule
+\texttt{decoder.rs:25}
+  & Unconditional \texttt{input.to\_string()} clones entire input buffer
+  & Non-minified input can be parsed as \texttt{\&str} directly
+  & Patched \\
+\texttt{decoder.rs:70}
+  & Each parsed line stored as owned \texttt{String}
+  & \texttt{Cow<'a, str>} enables zero-copy for unmodified lines
+  & Not impl. \\
+\texttt{decoder.rs:231}
+  & Field names cloned per tabular row ($R \times K$ clones)
+  & Shared \texttt{Arc<String>} or index-based mapping reduces to $K$ clones
+  & Not impl. \\
+\texttt{decoder.rs:622}
+  & Delimiter split returns \texttt{Vec<String>} via \texttt{clone()}
+  & \texttt{std::mem::take} or \texttt{Vec<\&str>} eliminates per-segment copies
+  & Patched \\
+\texttt{encoder.rs:355}
+  & Character-by-character escape with per-char \texttt{push()}
+  & Bulk \texttt{memcpy} for non-escaped runs
+  & Not impl. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent For context, \texttt{serde\_json} has undergone over a decade of
+optimization including SIMD-accelerated parsing and zero-copy deserialization.
+The fact that a naive SCON implementation is within a small integer factor
+(2.5--3.4$\times$) suggests that the format's computational cost is low
+and potentially competitive with JSON at parity of implementation maturity.
+
+\subsection{Preliminary Patch Results}
+\label{sec:patch}
+
+As an initial validation, we applied two patches to the Rust decoder:
+(1)~eliminating the unconditional input clone, and
+(2)~replacing \texttt{buffer.clone()} with \texttt{std::mem::take} in
+delimiter splitting. Table~\ref{tab:patch} shows the decode ratio
+before and after on the same hardware.
+
+\begin{table}[ht]
+\centering
+\caption{Decode overhead ratio (SCON / serde\_json) before and after
+         removing two allocation hotspots. 200 iterations, median.}
+\label{tab:patch}
+\begin{tabular}{l cc}
+\toprule
+Dataset & Before (v0.x) & After (patched) \\
+\midrule
+OpenAPI Specs   & 2.9$\times$ & 2.8$\times$ \\
+Config Records  & 3.1$\times$$^\dagger$ & 2.5$\times$ \\
+DB Exports      & 2.1$\times$ & 3.4$\times$$^\ddagger$ \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+\noindent $^\dagger$ The pre-patch Config Records measurement was affected by
+a decoder bug in expanded arrays with nested objects (only 1 of 40 items
+decoded). The corrected decoder processes all items, so the before/after
+comparison for this dataset is confounded with the bugfix.
+
+\noindent $^\ddagger$ DB Exports showed high variance across runs due to
+its small size (19\,KB); sub-millisecond timings are sensitive to
+scheduling jitter.
+\end{table}
+
+\subsection{Internal Validity}
+\label{sec:validity}
+
+The estimated impacts in Table~\ref{tab:hotspots} are not additive:
+optimizations may overlap (e.g., zero-copy lines subsume the input clone
+benefit). Furthermore, static analysis cannot capture cache effects,
+branch prediction, or allocator amortization. A comprehensive evaluation
+requires CPU profiling (e.g., \texttt{perf stat}, flamegraphs) and
+measurement of each optimization in isolation.
+
+These projections will be validated in a follow-up revision
+with per-optimization benchmarks.
+
+%% ============================================================
+\section{Optimization Roadmap}
+\label{sec:roadmap}
+
+Beyond the allocation hotspots addressed in Section~\ref{sec:impl-overhead},
+several architectural optimizations remain unexplored:
+
+\begin{description}
+\item[Zero-copy parsing via \texttt{Cow<'a, str>}.]
+  String values in SCON rarely require unescaping. A zero-copy decoder
+  can return slices into the input buffer for unquoted strings and keys,
+  avoiding allocation entirely for the common case.
+
+\item[SIMD-accelerated indentation scanning.]
+  Leading-space counting and semicolon scanning (minified mode) are
+  amenable to SIMD vectorization (SSE4.2 / AVX2 / NEON), following
+  the approach of \texttt{simdjson}~\cite{simdjson}.
+
+\item[Canonical fast-path.]
+  When the encoder emits with a known configuration (e.g., 1-space indent,
+  no schemas), the decoder can activate a fast path that skips directive
+  parsing, schema resolution, and flexible indent detection.
+
+\item[Tabular batch decode.]
+  Tabular arrays encode homogeneous rows. A specialized decoder can parse
+  the header once and apply a fixed field layout to all subsequent rows,
+  analogous to columnar batch processing.
+\end{description}
+
+\noindent These optimizations are orthogonal and composable. The Rust
+implementation (Level~2) is the primary target for these improvements.
+
+%% ============================================================
+\section{Normative Semantics}
+\label{sec:normative}
+
+This section specifies behaviors that the EBNF grammar alone cannot
+capture. Conforming implementations \textbf{MUST} follow these rules
+(terminology per RFC~2119~\cite{rfc2119}).
+
+\subsection{Duplicate Keys}
+
+If an object contains two entries with the same key, the
+\textbf{last occurrence wins}: the earlier value is silently replaced.
+Implementations \textbf{SHOULD} emit a warning when duplicate keys
+are detected during decoding. In \texttt{@@strict} mode, duplicate
+keys \textbf{MUST} produce a parse error.
+
+\subsection{Number Representation}
+
+\begin{itemize}
+\item Leading zeros are \textbf{not permitted} in integers
+      (e.g., \texttt{007} is parsed as the string \texttt{"007"}).
+\item \texttt{NaN}, \texttt{Infinity}, and \texttt{-Infinity} are
+      \textbf{not valid} SCON values. Implementations that encounter
+      these in source data \textbf{MUST} encode them as \texttt{null}
+      or as quoted strings.
+\item Floating-point values are serialized with sufficient decimal
+      digits to guarantee round-trip fidelity (at least 15 significant
+      digits for IEEE~754 double precision).
+\end{itemize}
+
+\subsection{Unicode and Encoding}
+
+\begin{itemize}
+\item SCON documents \textbf{MUST} be encoded in UTF-8 without BOM.
+\item The \texttt{\textbackslash uXXXX} escape produces a single
+      Unicode code point. Surrogate pairs (\texttt{U+D800}--\texttt{U+DFFF})
+      \textbf{MUST NOT} appear as isolated escapes; implementations
+      \textbf{SHOULD} reject them.
+\item No Unicode normalization (NFC/NFKC) is applied by default.
+      String equality is byte-level. Implementations \textbf{MAY}
+      offer normalization as an option but \textbf{MUST NOT} apply
+      it silently.
+\end{itemize}
+
+\subsection{Maximum Nesting Depth}
+
+Implementations \textbf{MUST} support at least 64 levels of nesting.
+Implementations \textbf{SHOULD} reject inputs exceeding a configurable
+maximum depth (default: 512) to mitigate stack overflow and
+billion-laughs-style attacks.
+
+%% ============================================================
+\section{Security Considerations}
+\label{sec:security}
+
+\subsection{Import Restrictions}
+
+The \texttt{@use} directive loads external schema files. To prevent
+Server-Side Request Forgery (SSRF) and file disclosure:
+
+\begin{itemize}
+\item Implementations \textbf{MUST NOT} resolve \texttt{http://},
+      \texttt{https://}, or \texttt{file://} URIs by default.
+      Only relative filesystem paths within a configurable base
+      directory are permitted.
+\item Implementations \textbf{MUST} reject import paths containing
+      \texttt{..} path traversal sequences.
+\item The maximum import depth \textbf{MUST} be bounded (default: 8).
+      Circular imports \textbf{MUST} be detected and produce a
+      parse error.
+\end{itemize}
+
+\subsection{Resource Limits}
+
+To prevent denial-of-service via crafted inputs:
+
+\begin{itemize}
+\item \textbf{Maximum document size:} implementations \textbf{SHOULD}
+      enforce a configurable limit (default: 64\,MB).
+\item \textbf{Maximum nesting depth:} see Section~\ref{sec:normative}.
+\item \textbf{Maximum schema count:} the \texttt{SchemaRegistry}
+      \textbf{SHOULD} limit the number of registered schemas
+      (default: 1\,024) to prevent memory exhaustion via
+      \texttt{autoExtract} on adversarial inputs.
+\item \textbf{Tabular row limit:} the declared row count in a
+      tabular header \textbf{MUST} be validated against available
+      data rows; implementations \textbf{MUST NOT} allocate memory
+      based solely on the declared count.
+\end{itemize}
+
+\subsection{Directive Sandboxing}
+
+The \texttt{@@} directive mechanism is extensible by design.
+Implementations \textbf{MUST} ignore unrecognized directives
+(forward compatibility). Directives \textbf{MUST NOT} execute
+arbitrary code, modify filesystem state, or perform network
+operations.
+
+\bibliographystyle{plain}
+\begin{thebibliography}{9}
+\bibitem{rfc8259} T.~Bray, Ed.
+  \textit{The JavaScript Object Notation (JSON) Data Interchange Format}.
+  RFC~8259, IETF, December 2017.
+\bibitem{iso14977} ISO/IEC~14977:1996.
+  \textit{Information technology --- Syntactic metalanguage --- Extended BNF}.
+\bibitem{yaml} O.~Ben-Kiki, C.~Evans, I.~d\"ot Net.
+  \textit{YAML Ain't Markup Language (YAML) Version 1.2}.
+  \url{https://yaml.org/spec/1.2/spec.html}, 2009.
+\bibitem{scon-repo} G.~Moura.
+  \textit{SCON: Structured Compact Object Notation --- Reference Implementations}.
+  \url{https://github.com/QuijoteShin/scon}, 2026.
+\bibitem{simdjson} G.~Langdale and D.~Lemire.
+  \textit{Parsing Gigabytes of JSON per Second}.
+  The VLDB Journal, 28(6):941--960, 2019.
+\bibitem{rfc2119} S.~Bradner.
+  \textit{Key words for use in RFCs to Indicate Requirement Levels}.
+  RFC~2119, IETF, March 1997.
+\end{thebibliography}
+
+\end{document}
