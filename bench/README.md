@@ -110,11 +110,11 @@ The fairest comparison — both serde_json and SCON are compiled Rust:
 
 | Dataset | serde_json enc | SCON enc | Ratio | serde_json dec | SCON dec | Ratio |
 |---------|---------------:|---------:|------:|---------------:|---------:|------:|
-| OpenAPI Specs | 0.057 ms | 0.057 ms | **1.0x** | 0.253 ms | 0.564 ms | 2.2x |
-| Config Records | 0.060 ms | 0.065 ms | 1.1x | 0.334 ms | 0.747 ms | 2.2x |
-| DB Exports | 0.015 ms | 0.029 ms | 1.9x | 0.064 ms | 0.148 ms | 2.3x |
+| OpenAPI Specs | 0.059 ms | 0.067 ms | 1.1x | 0.458 ms | 0.866 ms | **1.9x** |
+| Config Records | 0.072 ms | 0.090 ms | 1.3x | 0.388 ms | 0.798 ms | 2.1x |
+| DB Exports | 0.020 ms | 0.040 ms | 1.9x | 0.081 ms | 0.175 ms | 2.2x |
 
-SCON encoding has reached **parity with serde_json** on OpenAPI (968 MB/s vs 825 MB/s). Decoding is 2.2–2.3x slower — the remaining gap is architectural: serde_json uses single-pass recursive descent with manual byte-level number parsing and a scratch buffer for zero-copy string unescaping. See the paper for detailed overhead attribution.
+SCON encoding is near parity with serde_json (1.1x on OpenAPI). Decoding has improved to **1.9–2.2x** with fast-path unescape (memchr no-escape check) and shared scratch buffer. The remaining gap is architectural: serde_json uses single-pass recursive descent with manual byte-level number parsing. See the paper for detailed overhead attribution.
 
 ### Paper publication baseline
 
@@ -130,7 +130,8 @@ bench/datasets/rust_p0_baseline_20260303_195334.json
 | Config Records | 0.087 ms | 0.187 ms | 2.2x | 0.457 ms | 1.130 ms | 2.5x |
 | DB Exports | 0.022 ms | 0.075 ms | 3.4x | 0.091 ms | 0.312 ms | 3.4x |
 
-Final optimized benchmark: `bench/datasets/rust_p3_all_final_20260303_222358.json`
+Phase 3 benchmark: `bench/datasets/rust_p3_all_final_20260303_222358.json`
+Phase 4 benchmark (scratch buffer + fast-path unescape): `bench/datasets/rust_p4_scratch_unescape_20260303_225941.json`
 
 ### Key takeaways
 

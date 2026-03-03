@@ -7,11 +7,12 @@ use memchr::memchr;
 pub struct Decoder {
     indent: usize,
     indent_auto_detect: bool,
+    scratch: String, // Scratch buffer compartido — capacidad reutilizada entre llamadas a unescape
 }
 
 impl Decoder {
     pub fn new() -> Self {
-        Self { indent: 1, indent_auto_detect: true }
+        Self { indent: 1, indent_auto_detect: true, scratch: String::with_capacity(256) }
     }
 
     pub fn with_indent(mut self, indent: usize) -> Self {
@@ -208,7 +209,7 @@ impl Decoder {
 
     // --- Object decoding ---
 
-    fn decode_object(&self, base_depth: usize, lines: &[ParsedLine<'_>], start: usize) -> Result<SconMap<String, Value>, String> {
+    fn decode_object(&mut self, base_depth: usize, lines: &[ParsedLine<'_>], start: usize) -> Result<SconMap<String, Value>, String> {
         let mut result = SconMap::default();
         let mut i = start;
 
@@ -245,7 +246,7 @@ impl Decoder {
     }
 
     // P5: colon_pos ya viene de find_key_colon — evita re-escanear en parse_key
-    fn decode_key_value(&self, line: &ParsedLine<'_>, lines: &[ParsedLine<'_>], index: usize, base_depth: usize, colon_pos: usize) -> Result<(String, Value, usize), String> {
+    fn decode_key_value(&mut self, line: &ParsedLine<'_>, lines: &[ParsedLine<'_>], index: usize, base_depth: usize, colon_pos: usize) -> Result<(String, Value, usize), String> {
         let content = line.content;
         let (key, key_end) = if content.as_bytes()[0] == b'"' {
             self.parse_key(content)?
@@ -296,7 +297,7 @@ impl Decoder {
 
     // --- Array decoding ---
 
-    fn decode_array_from_header(&self, index: usize, lines: &[ParsedLine<'_>], header: &ArrayHeader<'_>) -> Result<Value, String> {
+    fn decode_array_from_header(&mut self, index: usize, lines: &[ParsedLine<'_>], header: &ArrayHeader<'_>) -> Result<Value, String> {
         if header.length == 0 {
             return Ok(Value::Array(vec![]));
         }
@@ -318,7 +319,7 @@ impl Decoder {
         self.decode_expanded_array(index, lines, header.length)
     }
 
-    fn decode_tabular_array(&self, header_idx: usize, lines: &[ParsedLine<'_>], expected: usize, fields: &[&str], delimiter: char) -> Result<Value, String> {
+    fn decode_tabular_array(&mut self, header_idx: usize, lines: &[ParsedLine<'_>], expected: usize, fields: &[&str], delimiter: char) -> Result<Value, String> {
         let base_depth = lines[header_idx].depth;
         let mut result = Vec::with_capacity(expected);
         let mut i = header_idx + 1;
@@ -340,7 +341,7 @@ impl Decoder {
         Ok(Value::Array(result))
     }
 
-    fn decode_expanded_array(&self, header_idx: usize, lines: &[ParsedLine<'_>], expected: usize) -> Result<Value, String> {
+    fn decode_expanded_array(&mut self, header_idx: usize, lines: &[ParsedLine<'_>], expected: usize) -> Result<Value, String> {
         let base_depth = lines[header_idx].depth;
         let mut result = Vec::with_capacity(expected);
         let mut i = header_idx + 1;
@@ -380,7 +381,7 @@ impl Decoder {
         Ok(Value::Array(result))
     }
 
-    fn decode_list_item_object(&self, _line: &ParsedLine<'_>, lines: &[ParsedLine<'_>], index: usize, base_depth: usize) -> Result<SconMap<String, Value>, String> {
+    fn decode_list_item_object(&mut self, _line: &ParsedLine<'_>, lines: &[ParsedLine<'_>], index: usize, base_depth: usize) -> Result<SconMap<String, Value>, String> {
         let item_content = &lines[index].content[2..]; // skip "- "
 
         let mut result = SconMap::default();
@@ -502,7 +503,7 @@ impl Decoder {
         Some(ArrayHeader { key, length, delimiter, fields, inline_values })
     }
 
-    fn parse_key(&self, content: &str) -> Result<(String, usize), String> {
+    fn parse_key(&mut self, content: &str) -> Result<(String, usize), String> {
         if content.starts_with('"') {
             let close = self.find_closing_quote(content, 0)
                 .ok_or_else(|| "Unterminated quoted key".to_string())?;
@@ -552,7 +553,7 @@ impl Decoder {
         None
     }
 
-    fn parse_inline_value(&self, input: &str) -> Value {
+    fn parse_inline_value(&mut self, input: &str) -> Value {
         let trimmed = input.trim();
         if trimmed.is_empty() { return Value::String(String::new()); }
         if trimmed == "[]" { return Value::Array(vec![]); }
@@ -577,7 +578,7 @@ impl Decoder {
         self.parse_primitive(trimmed)
     }
 
-    fn parse_inline_object(&self, inner: &str) -> SconMap<String, Value> {
+    fn parse_inline_object(&mut self, inner: &str) -> SconMap<String, Value> {
         let mut result = SconMap::default();
         let parts = self.split_top_level(inner, ',');
 
@@ -594,12 +595,12 @@ impl Decoder {
         result
     }
 
-    fn parse_delimited_values(&self, input: &str, delimiter: char) -> Vec<Value> {
+    fn parse_delimited_values(&mut self, input: &str, delimiter: char) -> Vec<Value> {
         let parts = self.split_top_level(input, delimiter);
         parts.iter().map(|p| self.parse_primitive(p.trim())).collect()
     }
 
-    fn parse_primitive(&self, token: &str) -> Value {
+    fn parse_primitive(&mut self, token: &str) -> Value {
         let t = token.trim();
         if t.is_empty() { return Value::String(String::new()); }
         if t == "[]" { return Value::Array(vec![]); }
@@ -629,7 +630,7 @@ impl Decoder {
         Value::String(t.to_string())
     }
 
-    fn unquote_key(&self, s: &str) -> String {
+    fn unquote_key(&mut self, s: &str) -> String {
         let t = s.trim();
         if t.starts_with('"') && t.ends_with('"') && t.len() >= 2 {
             self.unescape_string(&t[1..t.len() - 1])
@@ -656,31 +657,39 @@ impl Decoder {
         None
     }
 
-    fn unescape_string(&self, s: &str) -> String {
-        let mut result = String::with_capacity(s.len());
+    // Fast-path + scratch buffer — dos optimizaciones combinadas:
+    // 1. Si no hay backslashes, retorna slice directo sin procesar (mayoría de strings)
+    // 2. Si hay escapes, usa scratch buffer compartido (capacidad reutilizada entre llamadas)
+    fn unescape_string(&mut self, s: &str) -> String {
+        // Fast path: sin backslashes → copia directa, skip byte-by-byte loop
+        if memchr(b'\\', s.as_bytes()).is_none() {
+            return s.to_string();
+        }
+        // Slow path: scratch buffer — clear reutiliza capacidad previa
+        self.scratch.clear();
         let bytes = s.as_bytes();
         let mut i = 0;
         while i < bytes.len() {
             if bytes[i] == b'\\' && i + 1 < bytes.len() {
                 match bytes[i + 1] {
-                    b'\\' => result.push('\\'),
-                    b'"' => result.push('"'),
-                    b'n' => result.push('\n'),
-                    b'r' => result.push('\r'),
-                    b't' => result.push('\t'),
-                    b';' => result.push(';'),
+                    b'\\' => self.scratch.push('\\'),
+                    b'"' => self.scratch.push('"'),
+                    b'n' => self.scratch.push('\n'),
+                    b'r' => self.scratch.push('\r'),
+                    b't' => self.scratch.push('\t'),
+                    b';' => self.scratch.push(';'),
                     other => {
-                        result.push('\\');
-                        result.push(other as char);
+                        self.scratch.push('\\');
+                        self.scratch.push(other as char);
                     }
                 }
                 i += 2;
             } else {
-                result.push(bytes[i] as char);
+                self.scratch.push(bytes[i] as char);
                 i += 1;
             }
         }
-        result
+        self.scratch.clone()
     }
 
     //P1.3: Returns &str slice instead of String — zero-copy
