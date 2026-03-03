@@ -4,6 +4,9 @@
 use crate::value::Value;
 use indexmap::IndexMap;
 
+// P2.3: Pre-computed spaces for write_indent
+const INDENT_SPACES: &str = "                                                                ";
+
 pub struct Encoder {
     indent: usize,
     delimiter: char,
@@ -26,12 +29,17 @@ impl Encoder {
 
     pub fn encode(&self, data: &Value) -> String {
         let mut buf = String::with_capacity(1024);
+        self.encode_to(data, &mut buf);
+        buf
+    }
+
+    // P2.4: Write to external buffer — avoids allocation per call
+    pub fn encode_to(&self, data: &Value, buf: &mut String) {
         match data {
             Value::Object(obj) if obj.is_empty() => buf.push_str("{}"),
             Value::Array(arr) if arr.is_empty() => buf.push_str("[]"),
-            _ => self.encode_value(data, 0, &mut buf),
+            _ => self.encode_value(data, 0, buf),
         }
-        buf
     }
 
     fn encode_value(&self, value: &Value, depth: usize, buf: &mut String) {
@@ -108,7 +116,7 @@ impl Encoder {
                 self.write_key(k, buf);
             }
             buf.push('[');
-            buf.push_str(&len.to_string());
+            self.write_usize(len, buf);
             buf.push_str("]: ");
             for (i, v) in arr.iter().enumerate() {
                 if i > 0 {
@@ -127,7 +135,7 @@ impl Encoder {
                 self.write_key(k, buf);
             }
             buf.push('[');
-            buf.push_str(&len.to_string());
+            self.write_usize(len, buf);
             buf.push_str("]{");
             for (i, f) in fields.iter().enumerate() {
                 if i > 0 { buf.push(self.delimiter); }
@@ -160,7 +168,7 @@ impl Encoder {
             self.write_key(k, buf);
         }
         buf.push('[');
-        buf.push_str(&len.to_string());
+        self.write_usize(len, buf);
         buf.push_str("]:");
         for item in arr {
             buf.push('\n');
@@ -184,7 +192,7 @@ impl Encoder {
                 Value::Array(inner) if inner.iter().all(|v| v.is_primitive()) => {
                     self.write_indent(depth + 1, buf);
                     buf.push_str("- [");
-                    buf.push_str(&inner.len().to_string());
+                    self.write_usize(inner.len(), buf);
                     buf.push_str("]: ");
                     for (i, v) in inner.iter().enumerate() {
                         if i > 0 {
@@ -223,7 +231,7 @@ impl Encoder {
             }
             Value::Array(arr) if arr.iter().all(|v| v.is_primitive()) => {
                 buf.push('[');
-                buf.push_str(&arr.len().to_string());
+                self.write_usize(arr.len(), buf);
                 buf.push_str("]: ");
                 for (i, v) in arr.iter().enumerate() {
                     if i > 0 {
@@ -316,15 +324,27 @@ impl Encoder {
 
     // --- Primitive writing ---
 
+    // P2.1: Write usize without temporary String allocation
+    #[inline]
+    fn write_usize(&self, n: usize, buf: &mut String) {
+        let mut itoa_buf = itoa::Buffer::new();
+        buf.push_str(itoa_buf.format(n));
+    }
+
     fn write_primitive(&self, value: &Value, buf: &mut String) {
         match value {
             Value::Null => buf.push_str("null"),
             Value::Bool(true) => buf.push_str("true"),
             Value::Bool(false) => buf.push_str("false"),
-            Value::Integer(n) => buf.push_str(&n.to_string()),
+            // P2.1: itoa — no temporary String for integers
+            Value::Integer(n) => {
+                let mut itoa_buf = itoa::Buffer::new();
+                buf.push_str(itoa_buf.format(*n));
+            }
+            // P2.1: ryu — no temporary String for floats
             Value::Float(n) => {
-                let s = format!("{}", n);
-                buf.push_str(&s);
+                let mut ryu_buf = ryu::Buffer::new();
+                buf.push_str(ryu_buf.format(*n));
             }
             Value::String(s) => self.write_string(s, buf),
             _ => {}
@@ -351,51 +371,75 @@ impl Encoder {
         }
     }
 
+    // P2.2: Escape by chunks — skip to next escapable char instead of char-by-char
     fn escape_string(&self, s: &str, buf: &mut String) {
-        for c in s.chars() {
-            match c {
-                '\\' => buf.push_str("\\\\"),
-                '"' => buf.push_str("\\\""),
-                '\n' => buf.push_str("\\n"),
-                '\r' => buf.push_str("\\r"),
-                '\t' => buf.push_str("\\t"),
-                ';' => buf.push_str("\\;"),
-                _ => buf.push(c),
+        let bytes = s.as_bytes();
+        let mut last_flush = 0;
+
+        for (i, &b) in bytes.iter().enumerate() {
+            let esc = match b {
+                b'\\' => "\\\\",
+                b'"'  => "\\\"",
+                b'\n' => "\\n",
+                b'\r' => "\\r",
+                b'\t' => "\\t",
+                b';'  => "\\;",
+                _ => continue,
+            };
+            // Flush the clean segment before this escape
+            if last_flush < i {
+                buf.push_str(&s[last_flush..i]);
             }
+            buf.push_str(esc);
+            last_flush = i + 1;
+        }
+        // Flush remaining
+        if last_flush < s.len() {
+            buf.push_str(&s[last_flush..]);
         }
     }
 
+    // P3.1: Iterate bytes instead of chars — all checked chars are ASCII
     fn is_safe_unquoted(&self, s: &str) -> bool {
         if s.is_empty() { return false; }
         if matches!(s, "true" | "false" | "null") { return false; }
         // Numeric check
         if s.parse::<i64>().is_ok() || s.parse::<f64>().is_ok() { return false; }
-        // Delimiter check
-        if s.contains(self.delimiter) { return false; }
-        // Special chars
-        for c in s.chars() {
-            if matches!(c, ' ' | '\t' | ':' | '"' | '\\' | ';' | '@' | '#' | '{' | '[' | ']' | '}') {
+        let delim_byte = self.delimiter as u8;
+        for &b in s.as_bytes() {
+            if b == delim_byte || matches!(b, b' ' | b'\t' | b':' | b'"' | b'\\' | b';' | b'@' | b'#' | b'{' | b'[' | b']' | b'}') {
                 return false;
             }
         }
         true
     }
 
+    // P3.1: Iterate bytes instead of chars
     fn is_valid_unquoted_key(&self, key: &str) -> bool {
         if key.is_empty() { return false; }
-        if key.starts_with('#') { return false; }
-        for c in key.chars() {
-            if matches!(c, ':' | '[' | ']' | '{' | '}' | '"' | '\\' | ' ' | '\t' | ';' | '@' | '#' | ',') {
+        if key.as_bytes()[0] == b'#' { return false; }
+        for &b in key.as_bytes() {
+            if matches!(b, b':' | b'[' | b']' | b'{' | b'}' | b'"' | b'\\' | b' ' | b'\t' | b';' | b'@' | b'#' | b',') {
                 return false;
             }
         }
         true
     }
 
+    // P2.3: Use pre-computed slice instead of push loop
     fn write_indent(&self, depth: usize, buf: &mut String) {
         let spaces = self.indent * depth;
-        for _ in 0..spaces {
-            buf.push(' ');
+        if spaces == 0 { return; }
+        if spaces <= INDENT_SPACES.len() {
+            buf.push_str(&INDENT_SPACES[..spaces]);
+        } else {
+            // Fallback for very deep nesting
+            let full = spaces / INDENT_SPACES.len();
+            let rem = spaces % INDENT_SPACES.len();
+            for _ in 0..full {
+                buf.push_str(INDENT_SPACES);
+            }
+            buf.push_str(&INDENT_SPACES[..rem]);
         }
     }
 }

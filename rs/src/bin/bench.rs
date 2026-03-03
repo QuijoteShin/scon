@@ -19,9 +19,17 @@ fn main() {
     let iters_flag = args.iter().find(|a| a.starts_with("--iterations="));
     let iters: usize = iters_flag.map(|f| f.split('=').nth(1).unwrap().parse().unwrap()).unwrap_or(100);
 
+    let tag: Option<String> = args.iter()
+        .find(|a| a.starts_with("--tag="))
+        .map(|f| f.split('=').nth(1).unwrap().to_string());
+
     println!("╔══════════════════════════════════════════════════════════╗");
     println!("║  SCON Benchmark — Rust Implementation                   ║");
     println!("║  Iterations: {} (warmup: 5){}║", iters, " ".repeat(33 - format!("{}", iters).len()));
+    if let Some(ref t) = tag {
+        let pad = 42usize.saturating_sub(t.len());
+        println!("║  Tag: {}{}║", t, " ".repeat(pad));
+    }
     println!("╚══════════════════════════════════════════════════════════╝");
     println!();
 
@@ -35,7 +43,7 @@ fn main() {
     }
 
     print_summary();
-    save_results(&all_results, iters);
+    save_results(&all_results, iters, tag.as_deref());
 }
 
 fn load_fixtures() -> Vec<(String, String, serde_json::Value, Value)> {
@@ -325,7 +333,7 @@ fn stats_json(sorted: &[f64]) -> serde_json::Value {
     })
 }
 
-fn save_results(results: &[serde_json::Value], iters: usize) {
+fn save_results(results: &[serde_json::Value], iters: usize, tag: Option<&str>) {
     let out_dir = Path::new("bench/datasets");
     if !out_dir.exists() {
         fs::create_dir_all(out_dir).ok();
@@ -345,20 +353,28 @@ fn save_results(results: &[serde_json::Value], iters: usize) {
         .or_else(|_| std::env::var("COMPUTERNAME"))
         .unwrap_or_else(|_| "unknown".to_string());
 
+    let mut meta = serde_json::json!({
+        "lang": "rust",
+        "suite": "standard",
+        "fixture_source": "bench/fixtures/",
+        "iterations": iters,
+        "date": &ts_str,
+        "timestamp": ts,
+        "hostname": hostname,
+    });
+    if let Some(t) = tag {
+        meta["tag"] = serde_json::Value::String(t.to_string());
+    }
+
     let output = serde_json::json!({
-        "meta": {
-            "lang": "rust",
-            "suite": "standard",
-            "fixture_source": "bench/fixtures/",
-            "iterations": iters,
-            "date": &ts_str,
-            "timestamp": ts,
-            "hostname": hostname,
-        },
+        "meta": meta,
         "results": results,
     });
 
-    let filename = format!("rust_{}.json", ts_str);
+    let filename = match tag {
+        Some(t) => format!("rust_{}_{}.json", t, ts_str),
+        None => format!("rust_{}.json", ts_str),
+    };
     let out_path = out_dir.join(&filename);
     match fs::write(&out_path, serde_json::to_string_pretty(&output).unwrap()) {
         Ok(_) => println!("\nJSON results saved to: {}", out_path.display()),

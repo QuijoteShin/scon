@@ -17,6 +17,10 @@ pub fn encode(data: &Value) -> String {
     Encoder::new().encode(data)
 }
 
+pub fn encode_to(data: &Value, buf: &mut String) {
+    Encoder::new().encode_to(data, buf);
+}
+
 pub fn encode_with_indent(data: &Value, indent: usize) -> String {
     Encoder::new().with_indent(indent).encode(data)
 }

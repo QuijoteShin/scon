@@ -57,14 +57,18 @@ impl Minifier {
         result
     }
 
-    // Expand minified SCON to indented format
+    // P3.2: Expand minified SCON — write directly to String without Vec<String> + join
     pub fn expand(minified: &str, indent: usize) -> String {
-        let mut lines = Vec::new();
+        let mut result = String::with_capacity(minified.len() * 2);
         let mut depth: usize = 0;
-        let mut buffer = String::new();
+        let mut seg_start = 0;
         let mut in_quotes = false;
         let bytes = minified.as_bytes();
         let len = bytes.len();
+        let mut is_first = true;
+
+        // Pre-computed indent string (reusable)
+        const SPACES: &str = "                                                                ";
 
         let mut i = 0;
         while i < len {
@@ -72,15 +76,12 @@ impl Minifier {
 
             // Handle escape in quotes
             if c == b'\\' && in_quotes && i + 1 < len {
-                buffer.push(c as char);
-                buffer.push(bytes[i + 1] as char);
                 i += 2;
                 continue;
             }
 
             if c == b'"' {
                 in_quotes = !in_quotes;
-                buffer.push('"');
                 i += 1;
                 continue;
             }
@@ -93,53 +94,65 @@ impl Minifier {
                     i += 1;
                 }
 
-                // Emit current buffer
-                let trimmed = buffer.trim().to_string();
-                if !trimmed.is_empty() {
-                    let mut line = String::new();
-                    for _ in 0..(indent * depth) {
-                        line.push(' ');
+                // Emit current segment
+                let segment = minified[seg_start..i - semi_count + 1].trim();
+                if !segment.is_empty() {
+                    if !is_first {
+                        result.push('\n');
                     }
-                    line.push_str(&trimmed);
-                    lines.push(line);
+                    is_first = false;
+                    // Write indent
+                    let spaces = indent * depth;
+                    if spaces > 0 {
+                        if spaces <= SPACES.len() {
+                            result.push_str(&SPACES[..spaces]);
+                        } else {
+                            for _ in 0..spaces { result.push(' '); }
+                        }
+                    }
+                    result.push_str(segment);
 
                     // Scope openers
-                    if trimmed.ends_with(':') && !Self::has_value_after_colon(&trimmed) {
+                    if segment.ends_with(':') && !Self::has_value_after_colon(segment) {
                         depth += 1;
                     }
                     // List items
-                    if trimmed.starts_with("- ") {
+                    if segment.starts_with("- ") {
                         depth += 1;
                     }
                 }
-
-                buffer.clear();
 
                 // Apply dedent
                 if semi_count >= 2 {
                     depth = depth.saturating_sub(semi_count - 1);
                 }
 
+                seg_start = i + 1;
                 i += 1;
                 continue;
             }
 
-            buffer.push(c as char);
             i += 1;
         }
 
-        // Last buffer
-        let trimmed = buffer.trim().to_string();
-        if !trimmed.is_empty() {
-            let mut line = String::new();
-            for _ in 0..(indent * depth) {
-                line.push(' ');
+        // Last segment
+        let segment = minified[seg_start..].trim();
+        if !segment.is_empty() {
+            if !is_first {
+                result.push('\n');
             }
-            line.push_str(&trimmed);
-            lines.push(line);
+            let spaces = indent * depth;
+            if spaces > 0 {
+                if spaces <= SPACES.len() {
+                    result.push_str(&SPACES[..spaces]);
+                } else {
+                    for _ in 0..spaces { result.push(' '); }
+                }
+            }
+            result.push_str(segment);
         }
 
-        lines.join("\n")
+        result
     }
 
     fn has_value_after_colon(s: &str) -> bool {
