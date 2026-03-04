@@ -3,6 +3,8 @@
 // Reads canonical fixtures from bench/fixtures/ (shared with PHP and JS benchmarks)
 // Usage: scon-bench [--iterations=100]
 
+use std::alloc::{GlobalAlloc, Layout, System};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use std::io::Write;
 use std::fs;
@@ -12,6 +14,38 @@ use scon_core::value::json_to_scon;
 use scon_core::{Encoder, Decoder, Minifier, Value, BorrowedDecoder, TapeDecoder};
 use flate2::write::GzEncoder;
 use flate2::Compression;
+
+// Tracking allocator — wraps System to measure peak memory per operation
+struct TrackingAlloc;
+static ALLOCATED: AtomicUsize = AtomicUsize::new(0);
+static PEAK: AtomicUsize = AtomicUsize::new(0);
+
+unsafe impl GlobalAlloc for TrackingAlloc {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let ret = unsafe { System.alloc(layout) };
+        if !ret.is_null() {
+            let current = ALLOCATED.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
+            PEAK.fetch_max(current, Ordering::Relaxed);
+        }
+        ret
+    }
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        unsafe { System.dealloc(ptr, layout) };
+        ALLOCATED.fetch_sub(layout.size(), Ordering::Relaxed);
+    }
+}
+
+#[global_allocator]
+static GLOBAL: TrackingAlloc = TrackingAlloc;
+
+fn reset_peak() {
+    let current = ALLOCATED.load(Ordering::Relaxed);
+    PEAK.store(current, Ordering::Relaxed);
+}
+
+fn peak_bytes() -> usize {
+    PEAK.load(Ordering::Relaxed)
+}
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -225,6 +259,27 @@ fn run_benchmark(name: &str, json_str: &str, json_val: &serde_json::Value, scon_
     scon_borrowed_times.sort_by(|a, b| a.partial_cmp(b).unwrap());
     scon_tape_times.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
+    // --- Peak memory per decode (single iteration, measures allocator high-water mark) ---
+    reset_peak();
+    { let _ = serde_json::from_str::<serde_json::Value>(&json_encoded).unwrap(); }
+    let mem_serde = peak_bytes();
+
+    reset_peak();
+    { let mut ic = json_encoded.as_bytes().to_vec(); let _ = simd_json::to_borrowed_value(&mut ic); }
+    let mem_simd = peak_bytes();
+
+    reset_peak();
+    { let _ = Decoder::new().decode(&scon_encoded); }
+    let mem_owned = peak_bytes();
+
+    reset_peak();
+    { bump.reset(); let _ = BorrowedDecoder::new(&bump).decode(&scon_encoded); }
+    let mem_borrowed = peak_bytes();
+
+    reset_peak();
+    { let _ = TapeDecoder::new().decode(&scon_encoded); }
+    let mem_tape = peak_bytes();
+
     println!("  Decoding Time ({} iters):", iters);
     println!("    simd-json:        {:.3}ms (p95: {:.3}ms, p99: {:.3}ms) — {} ops/s",
         percentile(&simd_decode_times, 50),
@@ -264,6 +319,14 @@ fn run_benchmark(name: &str, json_str: &str, json_val: &serde_json::Value, scon_
     println!("    SCON(owned):      {:.1}x vs serde", decode_ratio);
     println!("    SCON(borrowed):   {:.1}x vs serde", borrowed_ratio);
     println!("    SCON(tape):       {:.1}x vs serde", tape_ratio);
+
+    // --- Memory ---
+    println!("  Peak Memory (decode):");
+    println!("    simd-json:        {} KB", mem_simd / 1024);
+    println!("    serde_json:       {} KB", mem_serde / 1024);
+    println!("    SCON(owned):      {} KB", mem_owned / 1024);
+    println!("    SCON(borrowed):   {} KB", mem_borrowed / 1024);
+    println!("    SCON(tape):       {} KB", mem_tape / 1024);
 
     // --- Minify/Expand ---
     let mut expand_times = Vec::with_capacity(iters);
@@ -356,6 +419,13 @@ fn run_benchmark(name: &str, json_str: &str, json_val: &serde_json::Value, scon_
             "scon_decode_mbs": (scon_dec_tp * 100.0).round() / 100.0,
             "json_encode_mbs": (json_enc_tp * 100.0).round() / 100.0,
             "scon_encode_mbs": (scon_enc_tp * 100.0).round() / 100.0,
+        },
+        "memory": {
+            "simd_json": mem_simd,
+            "serde_json": mem_serde,
+            "scon_owned": mem_owned,
+            "scon_borrowed": mem_borrowed,
+            "scon_tape": mem_tape,
         },
     })
 }

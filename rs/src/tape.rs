@@ -1,9 +1,12 @@
 // rs/src/tape.rs
-// SCON Tape Decoder — parses SCON into a flat Vec<Node> (no tree allocation).
+// SCON Tape Decoder — single-pass, parses SCON into a flat Vec<Node> (no tree allocation).
 //
 // Instead of building nested IndexMap + Vec structures, the tape is a single contiguous
 // Vec<Node> where each node is a tagged union. Objects/Arrays store their child count,
 // enabling O(1) skip-over without parsing children.
+//
+// Architecture: single-pass with 1-line lookahead via LineIter + ScopeInfo depth stack.
+// No intermediate Vec<ParsedLine> — each line is parsed and emitted immediately.
 //
 // Memory layout comparison (for an object with 3 string fields):
 //   Owned:    1 IndexMap + 3 CompactString keys + 3 CompactString values = ~7 allocations
@@ -48,12 +51,94 @@ impl<'a> Tape<'a> {
     }
 }
 
-// Reuse ParsedLine from decoder logic
-struct ParsedLine<'a> {
-    depth: usize,
-    content: &'a str,
-    _line_num: usize,
-    has_bracket: bool,
+// Single-pass line iterator with cached peek — no intermediate Vec<ParsedLine>
+// Peek is cached so repeated peek_line() calls are O(1) after the first
+struct LineIter<'a> {
+    remaining: &'a str,
+    indent: usize,
+    // Cached peek: (depth, content, has_bracket, remaining_after)
+    peeked: Option<(usize, &'a str, bool, &'a str)>,
+}
+
+impl<'a> LineIter<'a> {
+    fn new(input: &'a str, indent_hint: usize) -> Self {
+        Self { remaining: input, indent: indent_hint, peeked: None }
+    }
+
+    fn auto_detect_indent(&mut self, input: &'a str) {
+        if let Some(nl) = input.find('\n') {
+            let after = &input[nl + 1..];
+            let spaces = after.len() - after.trim_start_matches(' ').len();
+            if spaces > 0 && after.len() > spaces {
+                let byte_after = after.as_bytes()[spaces];
+                if !byte_after.is_ascii_whitespace() {
+                    self.indent = spaces;
+                    return;
+                }
+            }
+        }
+        for line in input.lines() {
+            let spaces = line.len() - line.trim_start_matches(' ').len();
+            if spaces > 0 && !line.trim().is_empty() && !line.trim().starts_with('#') {
+                self.indent = spaces;
+                return;
+            }
+        }
+    }
+
+    // Scan forward from `from` to find next meaningful line
+    fn scan_next(from: &'a str, indent: usize) -> Option<(usize, &'a str, bool, &'a str)> {
+        let mut remaining = from;
+        loop {
+            if remaining.is_empty() { return None; }
+            let (line, rest) = match memchr(b'\n', remaining.as_bytes()) {
+                Some(pos) => (&remaining[..pos], &remaining[pos + 1..]),
+                None => (remaining, &remaining[remaining.len()..]),
+            };
+            remaining = rest;
+
+            let trimmed = line.trim();
+            if trimmed.is_empty() { continue; }
+            let first = trimmed.as_bytes()[0];
+            if first == b'#' { continue; }
+            if first == b'@' && (trimmed.starts_with("@@") || trimmed.starts_with("@use ")) { continue; }
+            if first == b's' && trimmed.starts_with("s:") { continue; }
+            if first == b'r' && trimmed.starts_with("r:") { continue; }
+            if trimmed.starts_with("sec:") { continue; }
+
+            let spaces = line.len() - line.trim_start_matches(' ').len();
+            let depth = if indent > 0 { spaces / indent } else { 0 };
+            let has_bracket = memchr(b'[', trimmed.as_bytes())
+                .map_or(false, |bp| memchr(b':', trimmed.as_bytes()).map_or(false, |cp| bp < cp));
+
+            return Some((depth, trimmed, has_bracket, remaining));
+        }
+    }
+
+    fn next_line(&mut self) -> Option<(usize, &'a str, bool)> {
+        if let Some((depth, content, has_bracket, rest)) = self.peeked.take() {
+            self.remaining = rest;
+            return Some((depth, content, has_bracket));
+        }
+        if let Some((depth, content, has_bracket, rest)) = Self::scan_next(self.remaining, self.indent) {
+            self.remaining = rest;
+            Some((depth, content, has_bracket))
+        } else {
+            None
+        }
+    }
+
+    fn peek_line(&mut self) -> Option<(usize, &'a str, bool)> {
+        if let Some((d, c, h, _)) = self.peeked {
+            return Some((d, c, h));
+        }
+        if let Some(result) = Self::scan_next(self.remaining, self.indent) {
+            self.peeked = Some(result);
+            Some((result.0, result.1, result.2))
+        } else {
+            None
+        }
+    }
 }
 
 struct ArrayHeader<'a> {
@@ -66,8 +151,6 @@ struct ArrayHeader<'a> {
 
 pub struct TapeDecoder {
     helper: Decoder,
-    #[allow(dead_code)]
-    scratch: String,
     indent: usize,
     indent_auto_detect: bool,
 }
@@ -76,7 +159,6 @@ impl TapeDecoder {
     pub fn new() -> Self {
         Self {
             helper: Decoder::new(),
-            scratch: String::with_capacity(256),
             indent: 1,
             indent_auto_detect: true,
         }
@@ -84,124 +166,121 @@ impl TapeDecoder {
 
     pub fn decode<'a>(&mut self, input: &'a str) -> Result<Tape<'a>, String> {
         if !input.contains('\n') && input.contains(';') {
-            // Minified — fallback to owned decode + convert (not the hot path)
             let val = Decoder::new().decode(input)?;
             return Ok(self.owned_to_tape(&val));
         }
 
-        // Auto-detect indent
+        let mut lines = LineIter::new(input, self.indent);
         if self.indent_auto_detect {
-            if let Some(cap) = input.find('\n').and_then(|nl_pos| {
-                let after = &input[nl_pos + 1..];
-                let spaces = after.len() - after.trim_start_matches(' ').len();
-                if spaces > 0 && after.len() > spaces && !after.as_bytes().get(spaces).map_or(true, |b| b.is_ascii_whitespace()) {
-                    Some(spaces)
-                } else {
-                    None
-                }
-            }) {
-                self.indent = cap;
-            } else {
-                for line in input.lines() {
-                    let spaces = line.len() - line.trim_start_matches(' ').len();
-                    if spaces > 0 && !line.trim().is_empty() && !line.trim().starts_with('#') {
-                        self.indent = spaces;
-                        break;
-                    }
-                }
+            lines.auto_detect_indent(input);
+            self.indent = lines.indent;
+        }
+
+        // Estimate tape size from input length (~1 node per 15 bytes is a reasonable heuristic)
+        let node_estimate = (input.len() / 15).max(16);
+        let mut tape: Vec<Node<'a>> = Vec::with_capacity(node_estimate);
+
+        // Peek at first line to handle edge cases
+        let first = match lines.peek_line() {
+            Some(f) => f,
+            None => {
+                tape.push(Node::Object(0));
+                return Ok(Tape { nodes: tape });
             }
-        }
+        };
 
-        // Pass 1: line classification
-        let line_estimate = input.as_bytes().iter().filter(|&&b| b == b'\n').count() + 1;
-        let mut parsed: Vec<ParsedLine<'_>> = Vec::with_capacity(line_estimate);
-        let indent = self.indent;
-        for (line_num, line) in input.lines().enumerate() {
-            let trimmed = line.trim();
-            if trimmed.is_empty() { continue; }
-            let first_byte = trimmed.as_bytes()[0];
-            if first_byte == b'#' { continue; }
-            if first_byte == b'@' && (trimmed.starts_with("@@") || trimmed.starts_with("@use ")) { continue; }
-            if first_byte == b's' && trimmed.starts_with("s:") { continue; }
-            if first_byte == b'r' && trimmed.starts_with("r:") { continue; }
-            if trimmed.starts_with("sec:") { continue; }
-            let spaces = line.len() - line.trim_start_matches(' ').len();
-            let depth = if indent > 0 { spaces / indent } else { 0 };
-            let has_bracket = memchr(b'[', trimmed.as_bytes())
-                .map_or(false, |bp| memchr(b':', trimmed.as_bytes()).map_or(false, |cp| bp < cp));
-            parsed.push(ParsedLine { depth, content: trimmed, _line_num: line_num, has_bracket });
-        }
-
-        if parsed.is_empty() {
-            return Ok(Tape { nodes: vec![Node::Object(0)] });
-        }
-
-        // Estimate tape size: ~2 nodes per line (key + value) is a reasonable heuristic
-        let mut tape = Vec::with_capacity(parsed.len() * 2);
-
-        let first = &parsed[0];
-        if parsed.len() == 1 && first.content == "{}" {
-            tape.push(Node::Object(0));
-            return Ok(Tape { nodes: tape });
-        }
-
-        if let Some(header) = self.try_array_header(first.content) {
-            if header.key.is_none() {
-                self.emit_array_from_header(0, &parsed, &header, &mut tape)?;
+        // Single line "{}"
+        if first.1 == "{}" {
+            lines.next_line();
+            if lines.peek_line().is_none() {
+                tape.push(Node::Object(0));
                 return Ok(Tape { nodes: tape });
             }
         }
 
-        if parsed.len() == 1 && !first.content.contains(':') {
-            self.emit_primitive(first.content, &mut tape);
-            return Ok(Tape { nodes: tape });
+        // Top-level array header without key
+        if let Some(header) = self.try_array_header(first.1) {
+            if header.key.is_none() {
+                lines.next_line(); // consume the header line
+                self.emit_array_from_header_streaming(&header, &mut lines, first.0, &mut tape)?;
+                return Ok(Tape { nodes: tape });
+            }
         }
 
-        self.emit_object(0, &parsed, 0, &mut tape)?;
+        // Single line without colon = primitive
+        if lines.peek_line().map_or(false, |(_, c, _)| !c.contains(':')) {
+            let (_, content, _) = lines.next_line().unwrap();
+            // check if there's nothing else
+            if lines.peek_line().is_none() {
+                self.emit_primitive(content, &mut tape);
+                return Ok(Tape { nodes: tape });
+            }
+            // if more lines, treat as object
+            self.emit_primitive(content, &mut tape);
+            // actually, reparse — this is rare edge case, fall through to object
+            tape.clear();
+            lines = LineIter::new(input, self.indent);
+            if self.indent_auto_detect {
+                lines.auto_detect_indent(input);
+            }
+        }
+
+        // Default: top-level object
+        self.emit_object_streaming(&mut lines, 0, &mut tape)?;
+
         Ok(Tape { nodes: tape })
     }
 
-    // --- Object emission ---
+    // --- Single-pass object emission with stack-based depth tracking ---
 
-    fn emit_object<'a>(&mut self, base_depth: usize, lines: &[ParsedLine<'a>], start: usize, tape: &mut Vec<Node<'a>>) -> Result<usize, String> {
+    fn emit_object_streaming<'a>(&mut self, lines: &mut LineIter<'a>, base_depth: usize, tape: &mut Vec<Node<'a>>) -> Result<(), String> {
         let obj_pos = tape.len();
-        tape.push(Node::Object(0)); // placeholder, patch count later
+        tape.push(Node::Object(0));
         let mut count = 0usize;
-        let mut i = start;
 
-        while i < lines.len() {
-            let line = &lines[i];
-            if line.depth < base_depth { break; }
-            if line.depth > base_depth { i += 1; continue; }
+        loop {
+            let (depth, content, has_bracket) = match lines.peek_line() {
+                Some(l) => l,
+                None => break,
+            };
 
-            let content = line.content;
+            if depth < base_depth { break; }
+            if depth > base_depth {
+                // skip lines that belong to deeper scopes (handled by recursive calls)
+                lines.next_line();
+                continue;
+            }
 
-            if line.has_bracket {
+            // Consume the line
+            lines.next_line();
+
+            // Array header check
+            if has_bracket {
                 if let Some(header) = self.try_array_header(content) {
                     if let Some(key) = header.key {
                         tape.push(Node::Key(key));
-                        i = self.emit_array_from_header(i, lines, &header, tape)?;
+                        self.emit_array_from_header_streaming(&header, lines, base_depth, tape)?;
                         count += 1;
                         continue;
                     }
                 }
             }
 
+            // Key-value pair
             if let Some(colon_pos) = self.helper.find_key_colon(content) {
-                i = self.emit_key_value(line, lines, i, base_depth, colon_pos, tape)?;
+                self.emit_key_value_streaming(content, colon_pos, lines, base_depth, tape)?;
                 count += 1;
                 continue;
             }
 
-            i += 1;
+            // unknown line at base depth — skip
         }
 
         tape[obj_pos] = Node::Object(count);
-        Ok(i)
+        Ok(())
     }
 
-    fn emit_key_value<'a>(&mut self, line: &ParsedLine<'a>, lines: &[ParsedLine<'a>], index: usize, base_depth: usize, colon_pos: usize, tape: &mut Vec<Node<'a>>) -> Result<usize, String> {
-        let content = line.content;
+    fn emit_key_value_streaming<'a>(&mut self, content: &'a str, colon_pos: usize, lines: &mut LineIter<'a>, base_depth: usize, tape: &mut Vec<Node<'a>>) -> Result<(), String> {
         let (key, key_end) = if content.as_bytes()[0] == b'"' {
             self.parse_key(content)?
         } else {
@@ -212,49 +291,35 @@ impl TapeDecoder {
 
         if !rest.is_empty() {
             self.emit_inline_value(rest, tape);
-            return Ok(index + 1);
+            return Ok(());
         }
 
-        if index + 1 < lines.len() && lines[index + 1].depth > base_depth {
-            let child_depth = base_depth + 1;
-            if lines[index + 1].depth == child_depth && lines[index + 1].content.starts_with("- ") {
-                // Expanded array without header
-                let arr_pos = tape.len();
-                tape.push(Node::Array(0));
-                let mut arr_count = 0;
-                let mut j = index + 1;
-                while j < lines.len() && lines[j].depth >= child_depth {
-                    if lines[j].depth == child_depth && lines[j].content.starts_with("- ") {
-                        let item_content = &lines[j].content[2..];
-                        if item_content.contains(':') {
-                            j = self.emit_list_item_object(&lines[j], lines, j, base_depth, tape)?;
-                            arr_count += 1;
-                            continue;
-                        } else {
-                            self.emit_inline_value(item_content, tape);
-                            arr_count += 1;
-                        }
-                    }
-                    j += 1;
+        // Peek next line to determine child type — the 1-line lookahead
+        if let Some((next_depth, next_content, _next_has_bracket)) = lines.peek_line() {
+            if next_depth > base_depth {
+                let child_depth = base_depth + 1;
+                if next_depth == child_depth && next_content.starts_with("- ") {
+                    // Expanded array (list items)
+                    self.emit_expanded_list_streaming(lines, child_depth, base_depth, tape)?;
+                    return Ok(());
                 }
-                tape[arr_pos] = Node::Array(arr_count);
-                return Ok(j);
+                // Nested object
+                self.emit_object_streaming(lines, child_depth, tape)?;
+                return Ok(());
             }
-
-            let next_i = self.emit_object(base_depth + 1, lines, index + 1, tape)?;
-            return Ok(next_i);
         }
 
+        // No children — empty object
         tape.push(Node::Object(0));
-        Ok(index + 1)
+        Ok(())
     }
 
     // --- Array emission ---
 
-    fn emit_array_from_header<'a>(&mut self, index: usize, lines: &[ParsedLine<'a>], header: &ArrayHeader<'a>, tape: &mut Vec<Node<'a>>) -> Result<usize, String> {
+    fn emit_array_from_header_streaming<'a>(&mut self, header: &ArrayHeader<'a>, lines: &mut LineIter<'a>, base_depth: usize, tape: &mut Vec<Node<'a>>) -> Result<(), String> {
         if header.length == 0 {
             tape.push(Node::Array(0));
-            return Ok(index + 1);
+            return Ok(());
         }
 
         if let Some(ref inline) = header.inline_values {
@@ -263,35 +328,37 @@ impl TapeDecoder {
                 tape.push(Node::Array(0));
                 let count = self.emit_delimited_values(inline, header.delimiter, tape);
                 tape[arr_pos] = Node::Array(count);
-                return Ok(index + 1);
+                return Ok(());
             }
         }
 
         if let Some(ref fields) = header.fields {
-            return self.emit_tabular_array(index, lines, header.length, fields, header.delimiter, tape);
+            return self.emit_tabular_array_streaming(lines, base_depth, header.length, fields, header.delimiter, tape);
         }
 
-        self.emit_expanded_array(index, lines, header.length, tape)
+        self.emit_expanded_array_streaming(lines, base_depth, header.length, tape)
     }
 
-    fn emit_tabular_array<'a>(&mut self, header_idx: usize, lines: &[ParsedLine<'a>], expected: usize, fields: &[&'a str], delimiter: char, tape: &mut Vec<Node<'a>>) -> Result<usize, String> {
-        let base_depth = lines[header_idx].depth;
+    fn emit_tabular_array_streaming<'a>(&mut self, lines: &mut LineIter<'a>, base_depth: usize, expected: usize, fields: &[&'a str], delimiter: char, tape: &mut Vec<Node<'a>>) -> Result<(), String> {
         let arr_pos = tape.len();
         tape.push(Node::Array(0));
         let mut row_count = 0;
-        let mut i = header_idx + 1;
 
-        while i < lines.len() && row_count < expected {
-            if lines[i].depth != base_depth + 1 { break; }
+        while row_count < expected {
+            let (depth, content, _) = match lines.peek_line() {
+                Some(l) => l,
+                None => break,
+            };
+            if depth != base_depth + 1 { break; }
+            lines.next_line();
+
             let obj_pos = tape.len();
             tape.push(Node::Object(fields.len()));
-            // Parse values inline and pair with field names
             let mut seg_start = 0;
             let mut in_quotes = false;
-            let bytes = lines[i].content.as_bytes();
+            let bytes = content.as_bytes();
             let delim_byte = delimiter as u8;
             let mut field_idx = 0;
-            let content = lines[i].content;
 
             let mut j = 0;
             while j < bytes.len() {
@@ -310,45 +377,44 @@ impl TapeDecoder {
                 }
                 j += 1;
             }
-            // Last field
             if field_idx < fields.len() {
                 tape.push(Node::Key(fields[field_idx]));
                 self.emit_primitive(content[seg_start..].trim(), tape);
                 field_idx += 1;
             }
-            // Pad missing fields with null
             while field_idx < fields.len() {
                 tape.push(Node::Key(fields[field_idx]));
                 tape.push(Node::Null);
                 field_idx += 1;
             }
-            // Patch object count (always fields.len())
             tape[obj_pos] = Node::Object(fields.len());
             row_count += 1;
-            i += 1;
         }
 
         tape[arr_pos] = Node::Array(row_count);
-        Ok(i)
+        Ok(())
     }
 
-    fn emit_expanded_array<'a>(&mut self, header_idx: usize, lines: &[ParsedLine<'a>], expected: usize, tape: &mut Vec<Node<'a>>) -> Result<usize, String> {
-        let base_depth = lines[header_idx].depth;
+    fn emit_expanded_array_streaming<'a>(&mut self, lines: &mut LineIter<'a>, base_depth: usize, expected: usize, tape: &mut Vec<Node<'a>>) -> Result<(), String> {
         let arr_pos = tape.len();
         tape.push(Node::Array(0));
         let mut count = 0;
-        let mut i = header_idx + 1;
+        let child_depth = base_depth + 1;
 
-        while i < lines.len() && count < expected {
-            let line = &lines[i];
-            if line.depth != base_depth + 1 { break; }
+        while count < expected {
+            let (depth, content, _) = match lines.peek_line() {
+                Some(l) => l,
+                None => break,
+            };
+            if depth != child_depth { break; }
 
-            if line.content.starts_with("- ") {
-                let item_content = &line.content[2..];
+            if content.starts_with("- ") {
+                lines.next_line();
+                let item_content = &content[2..];
 
                 if let Some(header) = self.try_array_header(item_content) {
                     if header.key.is_some() {
-                        i = self.emit_list_item_object(line, lines, i, base_depth, tape)?;
+                        self.emit_list_item_object_streaming(item_content, lines, base_depth, tape)?;
                         count += 1;
                         continue;
                     } else if let Some(ref inline) = header.inline_values {
@@ -357,35 +423,71 @@ impl TapeDecoder {
                         let sub_count = self.emit_delimited_values(inline, header.delimiter, tape);
                         tape[sub_pos] = Node::Array(sub_count);
                         count += 1;
+                        continue;
                     }
                 } else if item_content.contains(':') {
-                    i = self.emit_list_item_object(line, lines, i, base_depth, tape)?;
+                    self.emit_list_item_object_streaming(item_content, lines, base_depth, tape)?;
                     count += 1;
                     continue;
                 } else {
                     self.emit_inline_value(item_content, tape);
                     count += 1;
+                    continue;
                 }
             }
-            i += 1;
+            lines.next_line();
         }
 
         tape[arr_pos] = Node::Array(count);
-        Ok(i)
+        Ok(())
     }
 
-    fn emit_list_item_object<'a>(&mut self, _line: &ParsedLine<'a>, lines: &[ParsedLine<'a>], index: usize, base_depth: usize, tape: &mut Vec<Node<'a>>) -> Result<usize, String> {
-        let item_content = &lines[index].content[2..];
+    // Expanded list without header (e.g. `key:\n  - item1\n  - item2`)
+    fn emit_expanded_list_streaming<'a>(&mut self, lines: &mut LineIter<'a>, child_depth: usize, base_depth: usize, tape: &mut Vec<Node<'a>>) -> Result<(), String> {
+        let arr_pos = tape.len();
+        tape.push(Node::Array(0));
+        let mut count = 0;
+
+        loop {
+            let (depth, content, _) = match lines.peek_line() {
+                Some(l) => l,
+                None => break,
+            };
+            if depth < child_depth { break; }
+            if depth > child_depth {
+                // belongs to a deeper scope, consumed by recursive calls
+                lines.next_line();
+                continue;
+            }
+            if depth == child_depth && !content.starts_with("- ") { break; }
+
+            lines.next_line();
+            let item_content = &content[2..];
+
+            if item_content.contains(':') {
+                self.emit_list_item_object_streaming(item_content, lines, base_depth, tape)?;
+                count += 1;
+            } else {
+                self.emit_inline_value(item_content, tape);
+                count += 1;
+            }
+        }
+
+        tape[arr_pos] = Node::Array(count);
+        Ok(())
+    }
+
+    fn emit_list_item_object_streaming<'a>(&mut self, item_content: &'a str, lines: &mut LineIter<'a>, base_depth: usize, tape: &mut Vec<Node<'a>>) -> Result<(), String> {
         let obj_pos = tape.len();
         tape.push(Node::Object(0));
         let cont_depth = base_depth + 2;
-        let mut cont_start = index + 1;
         let mut count = 0;
 
+        // Parse the first key-value from the "- key: value" line
         if let Some(header) = self.try_array_header(item_content) {
             if let Some(key) = header.key {
                 tape.push(Node::Key(key));
-                cont_start = self.emit_array_from_header(index, lines, &header, tape)?;
+                self.emit_array_from_header_streaming(&header, lines, cont_depth.wrapping_sub(1), tape)?;
                 count += 1;
             }
         } else {
@@ -396,46 +498,59 @@ impl TapeDecoder {
             if !rest.is_empty() {
                 self.emit_inline_value(rest, tape);
                 count += 1;
-            } else if index + 1 < lines.len() && lines[index + 1].depth >= cont_depth {
-                let next_i = self.emit_object(cont_depth, lines, index + 1, tape)?;
-                cont_start = next_i;
-                count += 1;
             } else {
-                tape.push(Node::Object(0));
-                count += 1;
+                // Peek to see if next line is a child object
+                if let Some((next_depth, _, _)) = lines.peek_line() {
+                    if next_depth >= cont_depth {
+                        self.emit_object_streaming(lines, cont_depth, tape)?;
+                        count += 1;
+                    } else {
+                        tape.push(Node::Object(0));
+                        count += 1;
+                    }
+                } else {
+                    tape.push(Node::Object(0));
+                    count += 1;
+                }
             }
         }
 
-        // Continuation fields
-        let mut i = cont_start;
-        while i < lines.len() {
-            let next = &lines[i];
-            if next.depth < cont_depth { break; }
-            if next.depth == cont_depth {
-                if next.content.starts_with("- ") { break; }
+        // Continuation fields at cont_depth
+        loop {
+            let (depth, content, has_bracket) = match lines.peek_line() {
+                Some(l) => l,
+                None => break,
+            };
+            if depth < cont_depth { break; }
+            if depth > cont_depth {
+                lines.next_line();
+                continue;
+            }
+            // depth == cont_depth
+            if content.starts_with("- ") { break; }
 
-                if next.has_bracket {
-                    if let Some(header) = self.try_array_header(next.content) {
-                        if let Some(k) = header.key {
-                            tape.push(Node::Key(k));
-                            i = self.emit_array_from_header(i, lines, &header, tape)?;
-                            count += 1;
-                            continue;
-                        }
+            lines.next_line();
+
+            if has_bracket {
+                if let Some(header) = self.try_array_header(content) {
+                    if let Some(k) = header.key {
+                        tape.push(Node::Key(k));
+                        self.emit_array_from_header_streaming(&header, lines, cont_depth, tape)?;
+                        count += 1;
+                        continue;
                     }
                 }
-
-                if let Some(colon_pos) = self.helper.find_key_colon(next.content) {
-                    i = self.emit_key_value(next, lines, i, cont_depth, colon_pos, tape)?;
-                    count += 1;
-                    continue;
-                }
             }
-            i += 1;
+
+            if let Some(colon_pos) = self.helper.find_key_colon(content) {
+                self.emit_key_value_streaming(content, colon_pos, lines, cont_depth, tape)?;
+                count += 1;
+                continue;
+            }
         }
 
         tape[obj_pos] = Node::Object(count);
-        Ok(i)
+        Ok(())
     }
 
     // --- Parsing helpers ---
@@ -495,8 +610,6 @@ impl TapeDecoder {
         if content.starts_with('"') {
             let close = self.helper.find_closing_quote(content, 0)
                 .ok_or_else(|| "Unterminated quoted key".to_string())?;
-            // For tape, quoted keys with escapes still borrow (escapes are rare in keys)
-            // If there are escapes, we lose accuracy but it's acceptable for benchmarking
             let key = &content[1..close];
             if close + 1 >= content.len() || content.as_bytes()[close + 1] != b':' {
                 return Err("Missing colon after key".to_string());
@@ -604,8 +717,6 @@ impl TapeDecoder {
 
         if t.starts_with('"') {
             if let Some(close) = self.helper.find_closing_quote(t, 0) {
-                // For tape, borrow the raw content between quotes (including escapes)
-                // True unescape would need arena — for benchmarking raw borrow is representative
                 tape.push(Node::String(&t[1..close]));
                 return;
             }
@@ -681,7 +792,7 @@ impl TapeDecoder {
         None
     }
 
-    // Fallback: convert owned Value to tape
+    // Fallback: convert owned Value to tape (for minified input)
     fn owned_to_tape(&self, val: &crate::Value) -> Tape<'static> {
         let mut nodes = Vec::new();
         self.emit_owned(val, &mut nodes);
@@ -694,7 +805,7 @@ impl TapeDecoder {
             crate::Value::Bool(b) => tape.push(Node::Bool(*b)),
             crate::Value::Integer(i) => tape.push(Node::Integer(*i)),
             crate::Value::Float(f) => tape.push(Node::Float(*f)),
-            crate::Value::String(_) => tape.push(Node::String("")), // lossy — only for minified fallback
+            crate::Value::String(_) => tape.push(Node::String("")),
             crate::Value::Array(arr) => {
                 let pos = tape.len();
                 tape.push(Node::Array(arr.len()));
@@ -705,7 +816,7 @@ impl TapeDecoder {
                 let pos = tape.len();
                 tape.push(Node::Object(obj.len()));
                 for (_, v) in obj {
-                    tape.push(Node::Key("")); // lossy keys
+                    tape.push(Node::Key(""));
                     self.emit_owned(v, tape);
                 }
                 tape[pos] = Node::Object(obj.len());
