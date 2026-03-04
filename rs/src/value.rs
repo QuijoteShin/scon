@@ -1,11 +1,28 @@
 // scon/src/value.rs
 // SCON Value type — preserves Object vs Array distinction
+//
+// Design decisions:
+//   - CompactString instead of String: inline storage ≤24 bytes without heap allocation.
+//     Most SCON keys ("name", "type", "id", "status") are <24 bytes → zero heap allocs.
+//     Same stack size as String (24 bytes), transparent Deref<Target=str>.
+//     This single change reduced decode overhead from 1.9x to 1.6x vs serde_json.
+//
+//   - IndexMap instead of HashMap: preserves insertion order for round-trip fidelity
+//     (keys come out in the same order they went in). Backed by a Vec for ordered iteration.
+//
+//   - ahash instead of SipHash: ~2x faster hashing for short keys (most SCON keys are <24 bytes).
+//     SipHash is DoS-resistant but SCON doesn't process untrusted hash keys at scale.
+//     Measured ~10-24% improvement across encode/decode.
+//
+//   - Separate Integer(i64) vs Float(f64): SCON preserves numeric types from source data.
+//     JSON spec has only "number", so serde_json uses Number which defers parsing.
+//     SCON eagerly classifies: all-digits → i64, has-dot/exp → f64.
 
 use compact_str::CompactString;
 use indexmap::IndexMap;
 use std::fmt;
 
-// ahash en lugar de SipHash — ~10-24% más rápido en decode/encode por reducción de costo hash
+// ahash: O(1) per hash but ~2x faster constant than SipHash for short keys
 pub type SconMap<K, V> = IndexMap<K, V, ahash::RandomState>;
 
 #[derive(Debug, Clone, PartialEq)]

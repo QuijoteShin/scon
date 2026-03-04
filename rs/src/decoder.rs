@@ -1,5 +1,39 @@
 // scon/src/decoder.rs
 // SCON Decoder — SCON string → Value
+//
+// Architecture: two-pass parsing, O(L) time where L = input length.
+//
+// Pass 1 — Line classification:
+//   Split input into lines, compute depth (leading spaces / indent), skip comments/directives.
+//   Each line becomes a ParsedLine { depth, content: &str, has_bracket: bool }.
+//   All content fields borrow from the input string (zero-copy).
+//   has_bracket is a pre-filter: '[' before ':' marks potential array headers (~5% of lines).
+//
+// Pass 2 — Semantic interpretation:
+//   Walk ParsedLine[] with a monotonic pointer. Each line is visited at most twice
+//   (once for classification, once for value extraction). Functions return (result, next_index)
+//   so callers advance without re-scanning children — O(N) total, not O(N×D).
+//
+//   Line types recognized:
+//     "key: value"           → primitive key-value
+//     "key:"                 → scope opener, children at depth+1
+//     "key[N]: a, b, c"     → inline array of primitives
+//     "key[N]{f1,f2,...}:"   → tabular array header, followed by N data rows
+//     "key[N]:"              → expanded array, items prefixed with "- "
+//     "- value"              → list item (primitive)
+//     "- key: value"         → list item (object, first field inline, rest at depth+2)
+//
+// Key optimizations (see bench/README.md for measured impact):
+//   - CompactString: inline ≤24 bytes, eliminates ~90% of heap allocs for keys/values
+//   - Scratch buffer: shared String for unescape, capacity reused across all calls
+//   - Fast-path unescape: memchr(b'\\') → if no backslashes, skip processing entirely
+//   - memchr3 SIMD: single-pass ':', '"', '{' search in find_key_colon
+//   - Manual integer parser: byte accumulator avoids stdlib FromStr overhead
+//   - Inline delimited parsing: parse values during split (no intermediate Vec<&str>)
+//
+// Decode gap vs serde_json (1.6–1.8x) is architectural:
+//   serde_json: single-pass recursive descent, zero-copy &'de str borrowing from input
+//   SCON: two-pass (line array + semantic), CompactString copies (inline but still copies)
 
 use crate::value::{Value, SconMap};
 use compact_str::CompactString;
@@ -8,7 +42,7 @@ use memchr::memchr;
 pub struct Decoder {
     indent: usize,
     indent_auto_detect: bool,
-    scratch: String, // Scratch buffer compartido — capacidad reutilizada entre llamadas a unescape
+    scratch: String, // Shared unescape buffer — capacity reused across calls, avoids per-string allocation
 }
 
 impl Decoder {
@@ -107,8 +141,9 @@ impl Decoder {
         self.decode_object(0, &parsed, 0).map(|(obj, _)| Value::Object(obj))
     }
 
-    // P8: Parsea minified SCON directamente — `;` = newline, `;;` = dedent 1, `;;;` = dedent 2
-    // Evita Minifier::expand() que materializa un String completo antes de parsear
+    // Direct minified decoder — parses `;`-delimited SCON without expanding to indented form.
+    // Avoids allocating the full expanded String (~30% faster on minified input).
+    // Depth tracking: ';' after scope opener increments, ';;'+ decrements by (count-1).
     fn decode_minified(&mut self, input: &str) -> Result<Value, String> {
         // Estimar segmentos por conteo de ';'
         let seg_estimate = input.as_bytes().iter().filter(|&&b| b == b';').count() + 1;
@@ -214,7 +249,9 @@ impl Decoder {
 
     // --- Object decoding ---
 
-    // Retorna (map, next_index) — elimina re-escaneo de depth-skipping en callers
+    // Returns (map, next_index) — callers advance to next_index without re-scanning children.
+    // Before this pattern, parent loops did `while depth > base { i++ }` to skip children → O(N×D).
+    // With next_index returns, each line is visited exactly once across all recursion → O(N).
     fn decode_object(&mut self, base_depth: usize, lines: &[ParsedLine<'_>], start: usize) -> Result<(SconMap<CompactString, Value>, usize), String> {
         let mut result = SconMap::default();
         let mut i = start;
@@ -451,7 +488,8 @@ impl Decoder {
 
     // --- Parsing helpers ---
 
-    //P1.4: Single-pass check+parse — replaces is_array_header + parse_array_header
+    // Array header detection + parsing in one call. Quick reject: '[' must appear before ':'.
+    // Recognizes: key[N]: vals, key[N]{f1,f2}: (tabular), key[N]: (expanded), [N]: vals (anonymous)
     fn try_array_header<'a>(&self, content: &'a str) -> Option<ArrayHeader<'a>> {
         let bracket_start = content.find('[')?;
         //Quick reject: bracket must appear before first colon
@@ -461,7 +499,9 @@ impl Decoder {
         self.parse_array_header(content)
     }
 
-    // Zero-alloc: retorna slices prestados del content original
+    // Parses array header into borrowed slices from the original content — zero allocation.
+    // Format: [key][length[delim]]{field1,field2,...}: [inline_values]
+    // Supports custom delimiters: trailing \t in bracket = tab-delimited, | = pipe-delimited
     fn parse_array_header<'a>(&self, content: &'a str) -> Option<ArrayHeader<'a>> {
         let bracket_start = content.find('[')?;
         let key = if bracket_start > 0 {
@@ -605,7 +645,8 @@ impl Decoder {
         result
     }
 
-    // Inline splitting + parsing — evita Vec<&str> intermedio de split_top_level
+    // Inline split + parse in one pass — avoids intermediate Vec<&str> from split_top_level.
+    // Respects nesting: delimiters inside quotes, braces, or brackets are not split points.
     fn parse_delimited_values(&mut self, input: &str, delimiter: char) -> Vec<Value> {
         let mut result = Vec::new();
         let mut seg_start = 0;
@@ -668,9 +709,11 @@ impl Decoder {
         Value::String(CompactString::from(t))
     }
 
-    // Parser numérico manual — enteros por acumulador byte-level, floats por stdlib (pre-validado)
-    // Enteros son el caso común: evita FromStr + Result + ParseIntError allocation
-    // Floats: validamos formato primero → stdlib parse no falla → no paga error path
+    // Manual number parser — byte accumulator for integers, stdlib fallback for floats.
+    // Integers (the common case): n = n*10 + digit with checked_mul overflow detection.
+    // Avoids stdlib FromStr which allocates ParseIntError on failure.
+    // Floats: only falls through to parse::<f64>() after confirming '.' or 'e'/'E' presence,
+    // so the stdlib parse succeeds on first try (no error path allocation).
     fn try_parse_number(&self, t: &str) -> Option<Value> {
         let bytes = t.as_bytes();
         let len = bytes.len();
@@ -903,15 +946,21 @@ impl Default for Decoder {
     }
 }
 
-//P1.1: Zero-copy — content borrows from input string
+// Zero-copy line representation — content borrows from input string, no allocation per line.
+// 32 bytes per entry (usize + &str + usize + bool + padding).
+// The Vec<ParsedLine> is the only allocation in pass 1.
 struct ParsedLine<'a> {
-    depth: usize,
-    content: &'a str,
-    _line_num: usize,
-    has_bracket: bool, // '[' aparece antes de ':' — pre-filtro para try_array_header (~95% rejection)
+    depth: usize,       // Nesting level = leading_spaces / indent
+    content: &'a str,   // Trimmed line content, borrowed from input
+    _line_num: usize,   // Original line number (for error reporting)
+    has_bracket: bool,   // '[' before ':' → candidate for array header (~5% of lines are true)
 }
 
-// Zero-alloc: todos los campos son slices prestados del input original
+// Array header parsed from "key[N]{f1,f2,...}: values" — all fields borrow from input.
+// Supports three array formats:
+//   Inline:   key[3]: a, b, c           (fields=None, inline_values=Some)
+//   Tabular:  key[N]{f1,f2,...}:         (fields=Some, inline_values=None, followed by N rows)
+//   Expanded: key[N]:                    (fields=None, inline_values=None, followed by "- " items)
 struct ArrayHeader<'a> {
     key: Option<&'a str>,
     length: usize,

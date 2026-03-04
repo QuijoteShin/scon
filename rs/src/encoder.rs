@@ -1,10 +1,30 @@
 // scon/src/encoder.rs
 // SCON Encoder — Value → SCON string
+//
+// Architecture: single-pass recursive DFS over Value tree → String buffer.
+// Time O(N) where N = total nodes. Space O(D + L) where D = max depth, L = output length.
+//
+// Key encoding strategies:
+//   1. Primitives: written inline after "key: " — unquoted when safe, quoted with escapes otherwise
+//   2. Nested objects: "key:\n" then children indented by `self.indent` spaces
+//   3. Arrays of primitives: "key[N]: a, b, c" (inline, single line)
+//   4. Arrays of uniform objects: tabular format (SCON's main size advantage over JSON)
+//      - Header: "key[N]{field1,field2,...}:" written once
+//      - Rows: " val1, val2, ..." × N (no repeated keys)
+//      - Saves N×K key repetitions vs JSON's {"field1":v,"field2":v,...} per object
+//      - Detection: O(R×K) scan verifies all items share identical keys with primitive values
+//   5. Mixed arrays: expanded format with "- " prefix per item
+//
+// Quoting rules (two lookup tables, 256 bytes each, L1 cache resident):
+//   - Values: quote if contains space, tab, colon, quotes, backslash, semicolon, @, #, braces, brackets
+//   - Keys: same as values plus comma (comma is a delimiter in tabular headers)
+//   - Strings matching "true"/"false"/"null" or starting with digit/+/-/. are always quoted
+//     to prevent misinterpretation as primitives during decode
 
 use crate::value::{Value, SconMap};
 
-// Lookup tables — branch-free byte classification, vive en L1 cache (256 bytes c/u)
-// UNSAFE_VALUE[b] = true si byte b requiere quoting en un valor SCON
+// Lookup tables — branch-free byte classification, L1 cache resident (256 bytes each)
+// UNSAFE_VALUE[b] = true if byte b requires quoting in a SCON value
 const UNSAFE_VALUE: [bool; 256] = {
     let mut t = [false; 256];
     t[b' ' as usize] = true;
@@ -22,7 +42,7 @@ const UNSAFE_VALUE: [bool; 256] = {
     t
 };
 
-// UNSAFE_KEY[b] = true si byte b requiere quoting en un key SCON
+// UNSAFE_KEY[b] = true if byte b requires quoting in a SCON key (superset of value: adds comma)
 const UNSAFE_KEY: [bool; 256] = {
     let mut t = [false; 256];
     t[b':' as usize] = true;
@@ -326,7 +346,9 @@ impl Encoder {
         }
     }
 
-    // P9: Retorna &str refs a keys del IndexMap — evita clone de strings
+    // Tabular detection: returns borrowed key refs if all items are objects with identical keys
+    // and all values are primitive. Returns None → fall through to expanded format.
+    // Borrows &str from IndexMap keys — zero allocation for the field list itself.
     fn extract_tabular_fields<'a>(&self, arr: &'a [Value]) -> Option<Vec<&'a str>> {
         if arr.is_empty() { return None; }
 
@@ -408,7 +430,8 @@ impl Encoder {
         }
     }
 
-    // P2.2: Escape by chunks — skip to next escapable char instead of char-by-char
+    // Chunk-based escape: flush clean segments in bulk, only handle escape chars individually.
+    // SCON escapes: \\ \" \n \r \t \; (semicolon must be escaped — it's the minified delimiter)
     fn escape_string(&self, s: &str, buf: &mut String) {
         let bytes = s.as_bytes();
         let mut last_flush = 0;
@@ -436,8 +459,10 @@ impl Encoder {
         }
     }
 
-    // Lookup table — branch-free character classification, L1 cache resident (256 bytes)
-    // Bit 0 = unsafe for unquoted value, Bit 1 = unsafe for unquoted key
+    // Determines if a string value can be written without quotes.
+    // Conservative: rejects anything starting with digit/+/-/. (could be parsed as number),
+    // reserved words (true/false/null), and strings containing unsafe bytes.
+    // False positives (quoting unnecessarily) are safe; false negatives would break decode.
     fn is_safe_unquoted(&self, s: &str) -> bool {
         if s.is_empty() { return false; }
         if matches!(s, "true" | "false" | "null") { return false; }

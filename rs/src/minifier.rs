@@ -1,5 +1,25 @@
 // scon/src/minifier.rs
-// SCON Minifier — minify/expand
+// SCON Minifier — bidirectional transform between indented and single-line formats
+//
+// Minified SCON uses semicolons to encode structure that indentation provides in expanded form:
+//   ';'   = newline at same or deeper depth (regular separator)
+//   ';;'  = dedent by 1 level (closing a scope)
+//   ';;;' = dedent by 2 levels, ';;;;' = 3, etc. (N semicolons = dedent N-1)
+//
+// Example:
+//   Expanded:          Minified:
+//   server:            server:;host: localhost;port: 8080;;db:;name: main
+//     host: localhost
+//     port: 8080
+//   db:
+//     name: main
+//
+// Both operations are O(L) streaming single-pass, O(L) space.
+// Minify: tracks depth via indentation, emits ';' × (depth_diff + 1) on dedent.
+// Expand: tracks depth via scope openers (trailing ':') and semicolon counts.
+//
+// The decoder can parse minified input directly (decode_minified) without expanding first,
+// avoiding the intermediate String allocation.
 
 pub struct Minifier;
 

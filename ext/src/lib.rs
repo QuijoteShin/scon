@@ -1,6 +1,18 @@
 // ext/src/lib.rs
-// SCON PHP Extension — native encode/decode via Rust
-// Functions: scon_encode, scon_decode, scon_minify, scon_expand
+// SCON PHP Extension — native encode/decode via Rust (ext-php-rs FFI)
+// Exposes: scon_encode, scon_encode_indent, scon_decode, scon_minify, scon_expand
+//
+// This bridges PHP's Zval type system to scon_core::Value:
+//   PHP null        ↔ Value::Null
+//   PHP bool        ↔ Value::Bool
+//   PHP int (long)  ↔ Value::Integer(i64)
+//   PHP float       ↔ Value::Float(f64)
+//   PHP string      ↔ Value::String(CompactString)
+//   PHP array (sequential, 0-based) ↔ Value::Array
+//   PHP array (associative or sparse) ↔ Value::Object(SconMap)
+//
+// Sequential detection: iterate keys checking 0,1,2,... — PHP arrays can be sparse
+// (e.g., [0 => a, 5 => b]) which must map to Object, not Array.
 
 #![cfg_attr(windows, feature(abi_vectorcall))]
 
