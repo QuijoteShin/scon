@@ -110,11 +110,11 @@ The fairest comparison — both serde_json and SCON are compiled Rust:
 
 | Dataset | serde_json enc | SCON enc | Ratio | serde_json dec | SCON dec | Ratio |
 |---------|---------------:|---------:|------:|---------------:|---------:|------:|
-| OpenAPI Specs | 0.059 ms | 0.067 ms | 1.1x | 0.317 ms | 0.744 ms | 2.3x |
-| Config Records | 0.076 ms | 0.094 ms | 1.2x | 0.411 ms | 0.794 ms | **1.9x** |
-| DB Exports | 0.021 ms | 0.038 ms | 1.9x | 0.085 ms | 0.182 ms | 2.1x |
+| OpenAPI Specs | 0.062 ms | 0.069 ms | 1.1x | 0.378 ms | 0.608 ms | **1.6x** |
+| Config Records | 0.076 ms | 0.095 ms | 1.2x | 0.414 ms | 0.665 ms | **1.6x** |
+| DB Exports | 0.020 ms | 0.040 ms | 2.0x | 0.084 ms | 0.154 ms | **1.8x** |
 
-SCON encoding is near parity with serde_json (1.1x on OpenAPI). Decoding is **1.9–2.3x** after: fast-path unescape, scratch buffer, manual integer parser, depth-skip elimination O(N) vs O(N×D), memchr3 single-pass, inline split, and array header pre-filter. The remaining gap is dominated by `to_string()` allocations on every key/value — serde_json uses zero-copy `&'de str` borrowing from input. See the paper for detailed overhead attribution.
+SCON encoding is near parity with serde_json (1.1x on OpenAPI). Decoding has reached **1.6–1.8x** after `CompactString` (inline ≤24 bytes, no heap alloc for keys/values), depth-skip elimination O(N) vs O(N×D), fast-path unescape, scratch buffer, memchr3 single-pass, and inline split. The remaining gap is architectural: serde_json uses single-pass recursive descent with zero-copy `&'de str` borrowing. See the paper for detailed overhead attribution.
 
 ### Paper publication baseline
 
@@ -133,6 +133,7 @@ bench/datasets/rust_p0_baseline_20260303_195334.json
 Phase 3 benchmark: `bench/datasets/rust_p3_all_final_20260303_222358.json`
 Phase 4 benchmark (scratch buffer + fast-path unescape): `bench/datasets/rust_p4_scratch_unescape_20260303_225941.json`
 Phase 5 benchmark (no-rescan + memchr3 + inline split + bracket pre-filter): `bench/datasets/rust_p5_all_final_20260303_234453.json`
+Phase 6 benchmark (CompactString keys + values): `bench/datasets/rust_p6_compact_keys_20260303_235715.json`
 
 ### Post-publication optimization log
 
@@ -154,6 +155,7 @@ Each entry documents a change, its algorithmic impact, and measured result.
 | P12 | Inline `split_top_level` in `parse_delimited_values` | O(V) direct vs O(V) split + O(V) iterate (eliminates `Vec<&str>` alloc) | ~5% decode on Config/DB |
 | P13 | `has_bracket` pre-filter on `ParsedLine` | O(1) bool check skips O(L) `try_array_header` for ~95% of lines | ~neutral — evita trabajo innecesario en hot loop |
 | P14 | Chunk-based unescape via `memchr(b'\\')` | O(C) chunks vs O(L) byte-by-byte (C = escape count, C ≪ L) | ~neutral — fast-path already covers ~90% of strings |
+| P15 | `CompactString` (inline ≤24 bytes, no heap alloc for keys/values) | O(1) inline vs O(L) heap alloc for ~90% of strings (keys average ~8 bytes) | Decode **1.9x → 1.6x** OpenAPI, **1.8x** DB |
 
 **Complexity note on P10:** Before the fix, when `decode_object` called a child recursively, the child processed N lines, then the parent re-scanned the same N lines to find the next sibling (`while depth > base_depth { i++ }`). At depth D, the same line could be scanned D times — O(N×D) total. With the fix, each line is visited exactly once — O(N).
 

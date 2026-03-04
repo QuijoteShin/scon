@@ -2,6 +2,7 @@
 // SCON Decoder — SCON string → Value
 
 use crate::value::{Value, SconMap};
+use compact_str::CompactString;
 use memchr::memchr;
 
 pub struct Decoder {
@@ -214,7 +215,7 @@ impl Decoder {
     // --- Object decoding ---
 
     // Retorna (map, next_index) — elimina re-escaneo de depth-skipping en callers
-    fn decode_object(&mut self, base_depth: usize, lines: &[ParsedLine<'_>], start: usize) -> Result<(SconMap<String, Value>, usize), String> {
+    fn decode_object(&mut self, base_depth: usize, lines: &[ParsedLine<'_>], start: usize) -> Result<(SconMap<CompactString, Value>, usize), String> {
         let mut result = SconMap::default();
         let mut i = start;
 
@@ -230,7 +231,7 @@ impl Decoder {
                 if let Some(header) = self.try_array_header(content) {
                     if let Some(key) = header.key {
                         let (val, next_i) = self.decode_array_from_header(i, lines, &header)?;
-                        result.insert(key.to_string(), val);
+                        result.insert(CompactString::from(key), val);
                         i = next_i;
                         continue;
                     }
@@ -252,13 +253,13 @@ impl Decoder {
     }
 
     // P5: colon_pos ya viene de find_key_colon — evita re-escanear en parse_key
-    fn decode_key_value(&mut self, line: &ParsedLine<'_>, lines: &[ParsedLine<'_>], index: usize, base_depth: usize, colon_pos: usize) -> Result<(String, Value, usize), String> {
+    fn decode_key_value(&mut self, line: &ParsedLine<'_>, lines: &[ParsedLine<'_>], index: usize, base_depth: usize, colon_pos: usize) -> Result<(CompactString, Value, usize), String> {
         let content = line.content;
         let (key, key_end) = if content.as_bytes()[0] == b'"' {
             self.parse_key(content)?
         } else {
             // Fast path: colon_pos ya conocido, no re-escanear
-            (content[..colon_pos].trim().to_string(), colon_pos + 1)
+            (CompactString::from(content[..colon_pos].trim()), colon_pos + 1)
         };
         let rest = content[key_end..].trim();
 
@@ -340,7 +341,7 @@ impl Decoder {
             let mut row = SconMap::with_capacity_and_hasher(fields.len(), ahash::RandomState::new());
             // Consumir values sin clone — drain evita copia de cada Value
             for (field, val) in fields.iter().zip(values.drain(..)) {
-                row.insert(field.to_string(), val);
+                row.insert(CompactString::from(*field), val);
             }
             result.push(Value::Object(row));
             i += 1;
@@ -386,7 +387,7 @@ impl Decoder {
     }
 
     // Retorna (map, next_index) — elimina re-escaneo en decode_expanded_array y decode_key_value
-    fn decode_list_item_object(&mut self, _line: &ParsedLine<'_>, lines: &[ParsedLine<'_>], index: usize, base_depth: usize) -> Result<(SconMap<String, Value>, usize), String> {
+    fn decode_list_item_object(&mut self, _line: &ParsedLine<'_>, lines: &[ParsedLine<'_>], index: usize, base_depth: usize) -> Result<(SconMap<CompactString, Value>, usize), String> {
         let item_content = &lines[index].content[2..]; // skip "- "
 
         let mut result = SconMap::default();
@@ -397,7 +398,7 @@ impl Decoder {
         if let Some(header) = self.try_array_header(item_content) {
             if let Some(key) = header.key {
                 let (val, next_i) = self.decode_array_from_header(index, lines, &header)?;
-                result.insert(key.to_string(), val);
+                result.insert(CompactString::from(key), val);
                 cont_start = next_i;
             }
         } else {
@@ -428,7 +429,7 @@ impl Decoder {
                     if let Some(header) = self.try_array_header(next.content) {
                         if let Some(k) = header.key {
                             let (val, next_i) = self.decode_array_from_header(i, lines, &header)?;
-                            result.insert(k.to_string(), val);
+                            result.insert(CompactString::from(k), val);
                             i = next_i;
                             continue;
                         }
@@ -512,18 +513,18 @@ impl Decoder {
         Some(ArrayHeader { key, length, delimiter, fields, inline_values })
     }
 
-    fn parse_key(&mut self, content: &str) -> Result<(String, usize), String> {
+    fn parse_key(&mut self, content: &str) -> Result<(CompactString, usize), String> {
         if content.starts_with('"') {
             let close = self.find_closing_quote(content, 0)
                 .ok_or_else(|| "Unterminated quoted key".to_string())?;
-            let key = self.unescape_string(&content[1..close]);
+            let key = CompactString::from(self.unescape_string(&content[1..close]));
             if close + 1 >= content.len() || content.as_bytes()[close + 1] != b':' {
                 return Err("Missing colon after key".to_string());
             }
             Ok((key, close + 2))
         } else {
             let colon = content.find(':').ok_or_else(|| "Missing colon after key".to_string())?;
-            let key = content[..colon].trim().to_string();
+            let key = CompactString::from(content[..colon].trim());
             Ok((key, colon + 1))
         }
     }
@@ -564,7 +565,7 @@ impl Decoder {
 
     fn parse_inline_value(&mut self, input: &str) -> Value {
         let trimmed = input.trim();
-        if trimmed.is_empty() { return Value::String(String::new()); }
+        if trimmed.is_empty() { return Value::String(CompactString::const_new("")); }
         if trimmed == "[]" { return Value::Array(vec![]); }
         if trimmed == "{}" { return Value::Object(SconMap::default()); }
 
@@ -587,7 +588,7 @@ impl Decoder {
         self.parse_primitive(trimmed)
     }
 
-    fn parse_inline_object(&mut self, inner: &str) -> SconMap<String, Value> {
+    fn parse_inline_object(&mut self, inner: &str) -> SconMap<CompactString, Value> {
         let mut result = SconMap::default();
         let parts = self.split_top_level(inner, ',');
 
@@ -641,13 +642,13 @@ impl Decoder {
 
     fn parse_primitive(&mut self, token: &str) -> Value {
         let t = token.trim();
-        if t.is_empty() { return Value::String(String::new()); }
+        if t.is_empty() { return Value::String(CompactString::const_new("")); }
         if t == "[]" { return Value::Array(vec![]); }
         if t == "{}" { return Value::Object(SconMap::default()); }
 
         if t.starts_with('"') {
             if let Some(close) = self.find_closing_quote(t, 0) {
-                return Value::String(self.unescape_string(&t[1..close]));
+                return Value::String(CompactString::from(self.unescape_string(&t[1..close])));
             }
         }
 
@@ -664,7 +665,7 @@ impl Decoder {
             }
         }
 
-        Value::String(t.to_string())
+        Value::String(CompactString::from(t))
     }
 
     // Parser numérico manual — enteros por acumulador byte-level, floats por stdlib (pre-validado)
@@ -730,12 +731,12 @@ impl Decoder {
         None
     }
 
-    fn unquote_key(&mut self, s: &str) -> String {
+    fn unquote_key(&mut self, s: &str) -> CompactString {
         let t = s.trim();
         if t.starts_with('"') && t.ends_with('"') && t.len() >= 2 {
-            self.unescape_string(&t[1..t.len() - 1])
+            CompactString::from(self.unescape_string(&t[1..t.len() - 1]))
         } else {
-            t.to_string()
+            CompactString::from(t)
         }
     }
 

@@ -27,7 +27,7 @@ fn zval_to_value(zval: &Zval) -> Value {
         return Value::Float(zval.double().unwrap_or(0.0));
     }
     if zval.is_string() {
-        return Value::String(zval.str().unwrap_or("").to_string());
+        return Value::String(compact_str::CompactString::from(zval.str().unwrap_or("")));
     }
     if zval.is_array() {
         return ht_to_value(zval.array());
@@ -71,8 +71,8 @@ fn ht_to_value(ht: Option<&ZendHashTable>) -> Value {
     let mut map = SconMap::with_capacity_and_hasher(ht.len(), ahash::RandomState::new());
     for (key, val) in ht.iter() {
         let k = match key {
-            ext_php_rs::types::ArrayKey::Long(n) => n.to_string(),
-            ext_php_rs::types::ArrayKey::String(s) => s.to_string(),
+            ext_php_rs::types::ArrayKey::Long(n) => compact_str::CompactString::from(n.to_string()),
+            ext_php_rs::types::ArrayKey::String(s) => compact_str::CompactString::from(s.to_string()),
         };
         map.insert(k, zval_to_value(val));
     }

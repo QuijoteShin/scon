@@ -89,7 +89,7 @@ impl Encoder {
         }
     }
 
-    fn encode_object(&self, obj: &SconMap<String, Value>, depth: usize, buf: &mut String) {
+    fn encode_object(&self, obj: &SconMap<compact_str::CompactString, Value>, depth: usize, buf: &mut String) {
         let mut first = true;
         for (key, val) in obj {
             if !first { buf.push('\n'); }
@@ -244,7 +244,7 @@ impl Encoder {
         }
     }
 
-    fn encode_object_as_list_item(&self, obj: &SconMap<String, Value>, depth: usize, buf: &mut String) {
+    fn encode_object_as_list_item(&self, obj: &SconMap<compact_str::CompactString, Value>, depth: usize, buf: &mut String) {
         if obj.is_empty() {
             self.write_indent(depth, buf);
             buf.push_str("- ");

@@ -1,6 +1,7 @@
 // scon/src/value.rs
 // SCON Value type — preserves Object vs Array distinction
 
+use compact_str::CompactString;
 use indexmap::IndexMap;
 use std::fmt;
 
@@ -13,9 +14,11 @@ pub enum Value {
     Bool(bool),
     Integer(i64),
     Float(f64),
-    String(String),
+    // CompactString: inline ≤24 bytes (sin heap alloc), heap solo para strings largas
+    String(CompactString),
     Array(Vec<Value>),
-    Object(SconMap<String, Value>),
+    // CompactString keys: inline ≤24 bytes — la mayoría de keys SCON ("name", "type", "id") caben sin heap
+    Object(SconMap<CompactString, Value>),
 }
 
 impl Value {
@@ -67,7 +70,7 @@ impl Value {
         }
     }
 
-    pub fn as_object(&self) -> Option<&SconMap<String, Value>> {
+    pub fn as_object(&self) -> Option<&SconMap<CompactString, Value>> {
         match self {
             Value::Object(o) => Some(o),
             _ => None,
@@ -115,14 +118,14 @@ pub fn json_to_scon(v: &serde_json::Value) -> Value {
                 Value::Null
             }
         }
-        serde_json::Value::String(s) => Value::String(s.clone()),
+        serde_json::Value::String(s) => Value::String(CompactString::from(s.as_str())),
         serde_json::Value::Array(arr) => {
             Value::Array(arr.iter().map(json_to_scon).collect())
         }
         serde_json::Value::Object(obj) => {
             let mut map = SconMap::with_capacity_and_hasher(obj.len(), ahash::RandomState::new());
             for (k, v) in obj {
-                map.insert(k.clone(), json_to_scon(v));
+                map.insert(CompactString::from(k.as_str()), json_to_scon(v));
             }
             Value::Object(map)
         }
@@ -135,14 +138,14 @@ pub fn scon_to_json(v: &Value) -> serde_json::Value {
         Value::Bool(b) => serde_json::Value::Bool(*b),
         Value::Integer(n) => serde_json::json!(*n),
         Value::Float(n) => serde_json::json!(*n),
-        Value::String(s) => serde_json::Value::String(s.clone()),
+        Value::String(s) => serde_json::Value::String(s.to_string()),
         Value::Array(arr) => {
             serde_json::Value::Array(arr.iter().map(scon_to_json).collect())
         }
         Value::Object(obj) => {
             let mut map = serde_json::Map::new();
             for (k, v) in obj {
-                map.insert(k.clone(), scon_to_json(v));
+                map.insert(k.to_string(), scon_to_json(v));
             }
             serde_json::Value::Object(map)
         }

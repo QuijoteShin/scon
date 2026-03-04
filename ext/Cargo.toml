@@ -11,3 +11,4 @@ crate-type = ["cdylib"]
 scon-core = { path = "../rs" }
 ext-php-rs = "0.13"
 ahash = "0.8"
+compact_str = "0.9"
