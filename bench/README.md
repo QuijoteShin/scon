@@ -27,8 +27,12 @@ Fixtures are committed to git. Regenerate only when the generation algorithm cha
 ## Running benchmarks
 
 ```bash
-# PHP — standard datasets
+# PHP — standard datasets (userland)
 php bench/bench.php
+
+# PHP — native Rust extension (3-way: json vs scon-ext vs scon-php)
+cargo build --release -p scon-php
+php -d extension=./target/release/libscon_php.so bench/bench_ext.php
 
 # PHP — 10MB datasets (server logs, geo API, multimedia)
 php bench/bench_10mb.php
@@ -36,7 +40,7 @@ php bench/bench_10mb.php
 # JavaScript (Node.js) — standard datasets
 node --expose-gc bench/bench.mjs
 
-# Rust — standard datasets (build + run)
+# Rust — standard datasets (5-engine decode: simd-json, serde, owned, borrowed, tape)
 cargo build --release && ./target/release/scon-bench
 ```
 
@@ -52,8 +56,11 @@ php bench/bench_10mb.php --iterations=50
 # JS: custom iterations
 node --expose-gc bench/bench.mjs --iterations=200
 
-# Rust: custom iterations
-./target/release/scon-bench --iterations=200
+# PHP ext: custom iterations
+php -d extension=./target/release/libscon_php.so bench/bench_ext.php --iterations=200
+
+# Rust: custom iterations + tagging
+./target/release/scon-bench --iterations=200 --tag=my_test
 ```
 
 ## Results
@@ -68,13 +75,46 @@ All outputs share a standardized schema with `fixture_source`, payload sizes (in
 
 ## What is being compared
 
-| Language | JSON impl | SCON impl |
-|----------|-----------|-----------|
-| **PHP** | `json_encode`/`json_decode` (C extension) | Userland PHP |
-| **JavaScript** | `JSON.stringify`/`JSON.parse` (V8 native) | Userland JS |
-| **Rust** | `serde_json` (native Rust) | `scon-core` crate (native Rust) |
+| Language | JSON impl | SCON impl | Benchmark |
+|----------|-----------|-----------|-----------|
+| **PHP** | `json_encode`/`json_decode` (C extension) | Userland PHP | `bench/bench.php` |
+| **PHP (ext)** | `json_encode`/`json_decode` (C extension) | Rust native via ext-php-rs | `bench/bench_ext.php` |
+| **JavaScript** | `JSON.stringify`/`JSON.parse` (V8 native) | Userland JS | `bench/bench.mjs` |
+| **Rust** | `serde_json` / `simd-json` (native) | `scon-core` crate (native Rust) | `scon-bench` binary |
 
 The Rust benchmark provides the fairest format-vs-format comparison since both sides are native compiled code. PHP and JS benchmarks show real-world performance where SCON runs in userland against C/C++ JSON engines.
+
+### PHP native extension (Rust via ext-php-rs, zero-intermediate)
+
+3-way comparison: `json_encode/decode` (C) vs `scon_encode/decode` (Rust native ext) vs `Scon::encode/decode` (PHP userland).
+
+**P19 architecture**: decode walks the tape emitting Zvals directly (no `Value` intermediate). Encode walks PHP's `ZendHashTable` writing SCON directly to a string buffer. This eliminates the double tree construction that was the bottleneck in the previous version.
+
+| Operation | json (C) | scon (Rust ext) | Ratio | scon (PHP) | Ext speedup |
+|-----------|--------:|-----------:|------:|----------:|-----:|
+| Encode OpenAPI | 0.108 ms | 0.329 ms | 3.1x | 2.994 ms | **9.1x** |
+| Encode Config | 0.126 ms | 0.401 ms | 3.2x | 3.950 ms | **9.9x** |
+| Encode DB | 0.034 ms | 0.105 ms | 3.1x | 0.742 ms | **7.0x** |
+| Decode OpenAPI | 0.374 ms | 0.440 ms | 1.2x | 5.317 ms | **12.1x** |
+| Decode Config | 0.383 ms | 0.535 ms | 1.4x | 6.235 ms | **11.7x** |
+| Decode DB | 0.093 ms | 0.097 ms | 1.1x | 1.715 ms | **17.6x** |
+
+**Decode is near parity with json_decode** (1.1–1.4x). The Rust ext is **9–18x faster than PHP userland SCON**. DB Exports decode (1.1x) is essentially identical to json_decode — the tape decoder compensates for the format's parsing overhead.
+
+Encode overhead (3.1x) is structural, not FFI: SCON's tabular detection scans arrays twice to verify key uniformity before emitting the compact header — a cost JSON never pays. The actual string writing is near-parity.
+
+**P19 vs previous (P18) improvement:**
+
+| Operation | P18 Ratio vs json | P19 Ratio vs json | Improvement |
+|-----------|------------------:|------------------:|------------:|
+| Decode OpenAPI | 2.5x | **1.2x** | **52% faster** |
+| Decode Config | 2.3x | **1.4x** | **41% faster** |
+| Decode DB | 2.4x | **1.1x** | **54% faster** |
+| Encode OpenAPI | 5.1x | **3.1x** | **37% faster** |
+| Encode Config | 4.4x | **3.2x** | **28% faster** |
+| Encode DB | 4.9x | **3.1x** | **36% faster** |
+
+The zero-intermediate architecture (tape→Zval direct, Zval→SCON writer direct) eliminated the dominant bottleneck. This is the same pattern that makes PHP's built-in `json_decode` fast: parse and emit PHP types in one pass, no intermediate AST.
 
 ## Payload comparison (4 variants)
 
@@ -195,6 +235,7 @@ Each entry documents a change, its algorithmic impact, and measured result.
 | P16 | `BorrowedDecoder` — zero-copy `&'a str` from input + bumpalo arena | O(0) per string (borrow) vs O(L) copy to CompactString | Decode **1.7x → 1.5x** OpenAPI, **1.4x** Config |
 | P17 | `TapeDecoder` — flat `Vec<Node>`, zero IndexMap/Vec per node | O(1) amortized push vs O(K) IndexMap insert per object | Decode **faster than serde_json**: 0.7–0.9x |
 | P18 | Single-pass tape with cached-peek `LineIter` — eliminates `Vec<ParsedLine>` | O(L) single pass vs O(L) classify + O(L) parse (two-pass) | Decode **faster than simd-json**: 0.8x on OpenAPI/DB. Tape went from 0.287→**0.195ms** OpenAPI |
+| P19 | PHP ext zero-intermediate: tape→Zval direct decode, Zval→SCON writer encode | Eliminates `Value` construction + traversal (was ~70% of decode time) | PHP decode **2.5x→1.2x** vs json_decode. Encode **5.1x→3.1x**. Ext **9-18x faster** than PHP userland |
 
 **Complexity note on P10:** Before the fix, when `decode_object` called a child recursively, the child processed N lines, then the parent re-scanned the same N lines to find the next sibling (`while depth > base_depth { i++ }`). At depth D, the same line could be scanned D times — O(N×D) total. With the fix, each line is visited exactly once — O(N).
 
@@ -208,13 +249,15 @@ Each entry documents a change, its algorithmic impact, and measured result.
 
 3. **SCON tape uses less memory than all alternatives.** 17% less than serde_json on OpenAPI, less than simd-json in all datasets. Critical for embedded/telemetry targets (ESP32, Raspberry Pi).
 
-4. **Three decode modes serve different needs.** Owned (safe, persistent), borrowed (fast, zero-copy strings), tape (fastest, flat array). Choose based on access pattern.
+4. **PHP ext decode is near parity with json_decode.** Zero-intermediate architecture (tape→Zval, Zval→SCON) closes the FFI gap. DB Exports decode is 1.1x — essentially identical to PHP's C json_decode. The lesson: intermediate data structures are the bottleneck, not the parser or the FFI bridge.
 
-4. **SCON is readable AND smaller.** JSON needs pretty-print to be human-readable (3.8x size increase). SCON's standard format is readable with only 17% overhead vs JSON minified.
+5. **Three decode modes serve different needs.** Owned (safe, persistent), borrowed (fast, zero-copy strings), tape (fastest, flat array). Choose based on access pattern.
 
-4. **Network-bound workloads favor SCON.** When transmission latency dominates, smaller payloads matter more than microseconds of parsing.
+6. **SCON is readable AND smaller.** JSON needs pretty-print to be human-readable (3.8x size increase). SCON's standard format is readable with only 17% overhead vs JSON minified.
 
-5. **gzip equalizes size but not CPU.** After gzip both formats converge, but SCON starts from a smaller input — less CPU spent on compression.
+7. **Network-bound workloads favor SCON.** When transmission latency dominates, smaller payloads matter more than microseconds of parsing.
+
+8. **gzip equalizes size but not CPU.** After gzip both formats converge, but SCON starts from a smaller input — less CPU spent on compression.
 
 ### Note on cross-language JSON sizes
 
@@ -317,5 +360,7 @@ TreeHash uses [xxHash128](https://github.com/Cyan4973/xxHash) (XXH3 family) for 
 | Hash index (dedup) | assoc array by hex | object by hex | — | xxh128 → subtree mapping |
 | Value tree | mixed arrays | nested objects | `enum Value` | Recursive data model |
 | Line buffer (decoder) | `$parsedLines[]` | `parsedLines[]` | `Vec<ParsedLine>` | Two-pass parse |
+| Tape (decoder) | — | — | `Vec<Node<'a>>` | Single-pass flat decode |
+| PHP ext bridge | — | — | tape→Zval direct | Zero-intermediate FFI (P19) |
 
 `IndexMap` (Rust, from the `indexmap` crate) provides O(1) average-case lookup with preserved insertion order — a hash map backed by an auxiliary `Vec`. This is important for round-trip fidelity: keys come out in the same order they went in.

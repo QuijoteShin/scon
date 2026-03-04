@@ -202,11 +202,31 @@ function benchMem(callable $fn): int {
 # RUN BENCHMARKS
 # ============================================================================
 
-echo "Generating datasets...\n";
-$datasets = generateDatasets();
-foreach ($datasets as $name => $data) {
-    $jsonSize = strlen(json_encode($data));
-    echo "  {$name}: " . number_format($jsonSize) . " bytes JSON\n";
+# Load from canonical fixtures (same as Rust bench) or generate fallback
+$fixtureDir = __DIR__ . '/fixtures';
+$fixtureMap = [
+    'OpenAPI Specs'  => 'openapi_specs.json',
+    'Config Records' => 'config_records.json',
+    'DB Exports'     => 'db_exports.json',
+];
+
+$useFixtures = is_dir($fixtureDir);
+if ($useFixtures) {
+    echo "Loading fixtures from bench/fixtures/...\n";
+    $datasets = [];
+    foreach ($fixtureMap as $name => $file) {
+        $path = "$fixtureDir/$file";
+        if (!file_exists($path)) { echo "  MISSING: $path\n"; $useFixtures = false; break; }
+        $datasets[$name] = json_decode(file_get_contents($path), true);
+        echo "  {$name}: " . formatBytes(strlen(file_get_contents($path))) . " JSON\n";
+    }
+}
+if (!$useFixtures) {
+    echo "Generating datasets (fixtures not found)...\n";
+    $datasets = generateDatasets();
+    foreach ($datasets as $name => $data) {
+        echo "  {$name}: " . formatBytes(strlen(json_encode($data))) . " JSON\n";
+    }
 }
 echo "\n";
 

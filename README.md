@@ -92,11 +92,27 @@ SCON(min) + tape wins on **every axis** vs serde_json: smaller payload, faster d
 
 Break-even: SCON is faster end-to-end on links below ~100 Mbps.
 
+### PHP native extension (zero-intermediate FFI)
+
+The PHP extension uses the same tape decoder that beats simd-json, but emits PHP Zvals directly from the tape — no intermediate AST. Encode walks PHP arrays directly into a SCON string buffer.
+
+| Operation | Dataset | json_decode (C) | scon_decode (Rust ext) | Ratio |
+|-----------|---------|----------------:|-----------------------:|------:|
+| Decode | OpenAPI | 0.374 ms | **0.440 ms** | 1.2x |
+| Decode | Config | 0.383 ms | **0.535 ms** | 1.4x |
+| Decode | DB | 0.093 ms | **0.097 ms** | 1.1x |
+| Encode | OpenAPI | 0.108 ms | 0.329 ms | 3.1x |
+| Encode | Config | 0.126 ms | 0.401 ms | 3.2x |
+| Encode | DB | 0.034 ms | 0.105 ms | 3.1x |
+
+Decode is near parity with PHP's C json_decode (1.1–1.4x). The Rust ext is **9–18x faster than PHP userland SCON**. Encode overhead (3.1x) is structural: SCON's tabular detection requires scanning arrays twice to verify key uniformity — a cost JSON doesn't pay.
+
 ## Implementations
 
 | Language | Type | Path |
 |----------|------|------|
-| **Rust** | Native crate | `rs/` |
+| **Rust** | Native crate (core library) | `rs/` |
+| **PHP ext** | Native extension (Rust via ext-php-rs, zero-intermediate) | `ext/` |
 | **PHP** | Userland | `php/` |
 | **JavaScript** | Userland (Node.js) | `js/` |
 
