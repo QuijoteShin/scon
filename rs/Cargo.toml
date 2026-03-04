@@ -5,20 +5,26 @@ version = "0.1.0"
 edition = "2021"
 description = "SCON — Schema-Compact Object Notation"
 
+[features]
+default = ["bench"]
+# bench: adds simd-json + flate2 (needed by bench binary, won't compile on wasm32)
+bench = ["dep:simd-json", "dep:flate2"]
+
 [dependencies]
 indexmap = "2"
 ahash = "0.8"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-flate2 = "1"
+flate2 = { version = "1", optional = true }
 itoa = "1"
 ryu = "1"
 memchr = "2"
 compact_str = "0.9"
-simd-json = "0.14"
+simd-json = { version = "0.14", optional = true }
 bumpalo = "3"
 
 [[bin]]
 name = "scon-bench"
 path = "src/bin/bench.rs"
+required-features = ["bench"]

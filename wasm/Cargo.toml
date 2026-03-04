@@ -1,0 +1,21 @@
+# wasm/Cargo.toml — SCON WebAssembly module (zero-intermediate, like ext-php P19)
+[package]
+name = "scon-wasm"
+version = "0.2.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+scon-core = { path = "../rs", default-features = false }
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+getrandom = { version = "0.3", features = ["wasm_js"] }
+itoa = "1"
+ryu = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

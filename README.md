@@ -146,14 +146,43 @@ The PHP extension uses the tape decoder internally, emitting Zvals directly from
 
 Decode is near parity with PHP's C `json_decode`. The Rust ext is **9–18x faster than PHP userland SCON**.
 
+## WebAssembly module
+
+The WASM module compiles the Rust tape decoder to WebAssembly for browser and Node.js use. Zero-intermediate architecture: tape → JSON string inside WASM, single boundary crossing, then `JSON.parse` (V8 native C++) materializes the object.
+
+| Operation | JSON native | SCON JS | SCON WASM | WASM vs JSON |
+|-----------|----------:|--------:|----------:|-------------:|
+| Decode OpenAPI | 0.36 ms | 1.50 ms | **1.08 ms** | 3.0x |
+| Decode Config | 0.34 ms | 1.68 ms | **1.19 ms** | 3.5x |
+| Decode DB | 0.07 ms | 0.54 ms | **0.26 ms** | 3.6x |
+| Minify OpenAPI | 0.43 ms | — | **0.32 ms** | — |
+| Expand OpenAPI | 1.08 ms | — | **0.22 ms** | — |
+
+WASM decode is **28–52% faster than JS userland**. Minify/expand are **3–5x faster** (string→string, no boundary overhead).
+
+### Wire-to-parsed: where SCON+WASM wins
+
+With dedup enabled, SCON(dedup+min) reduces OpenAPI from 49 KB to 16.6 KB (-66%). The decode overhead (3x vs JSON.parse) is offset by the transmission saving on any bandwidth-limited link:
+
+| Bandwidth | JSON (49 KB) | SCON+WASM (16.6 KB) | Saving |
+|-----------|------------:|-----------:|-------:|
+| 1 Mbps (LoRa/satellite) | 392 ms | **134 ms** | **-66%** |
+| 10 Mbps (WiFi/mobile) | 39 ms | **14 ms** | **-64%** |
+| 100 Mbps (Ethernet) | 4.3 ms | **2.4 ms** | **-44%** |
+
+SCON+WASM wins at any bandwidth under ~500 Mbps. The crossover point is gigabit local — where transmission time is negligible and raw parse speed dominates.
+
+WASM binary: 170 KB raw, 70 KB gzipped.
+
 ## Implementations
 
 | Language | Type | Path |
 |----------|------|------|
 | **Rust** | Native crate (tape decoder, encoder, minifier) | `rs/` |
+| **WASM** | WebAssembly (Rust tape decoder via wasm-bindgen) | `wasm/` |
 | **PHP ext** | Native extension (Rust via ext-php-rs) | `ext/` |
 | **PHP** | Userland (encoder, decoder, dedup, schema registry) | `php/` |
-| **JavaScript** | Userland (Node.js) | `js/` |
+| **JavaScript** | Userland + WASM-accelerated (Node.js / browser) | `js/` |
 
 ## Running benchmarks
 

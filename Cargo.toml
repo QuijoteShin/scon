@@ -1,6 +1,7 @@
 # Cargo.toml — workspace root
 [workspace]
 members = ["rs", "ext"]
+exclude = ["wasm"]
 resolver = "2"
 
 [profile.release]

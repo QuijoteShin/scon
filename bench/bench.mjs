@@ -32,6 +32,25 @@ const SCON = {
     expand(minifiedString, options = {}) { return Minifier.expand(minifiedString, options.indent ?? 1); },
 };
 
+// WASM module — zero-intermediate Rust tape decoder compiled to WebAssembly
+let WASM = null;
+try {
+    const wasmDir = join(__dirname, '..', 'wasm', 'pkg');
+    const wasmMod = await import(join(wasmDir, 'scon_wasm.js'));
+    const wasmBytes = readFileSync(join(wasmDir, 'scon_wasm_bg.wasm'));
+    await wasmMod.default(wasmBytes);
+    WASM = {
+        encode: wasmMod.scon_encode,
+        decode: wasmMod.scon_decode,
+        decodeViaJson: (s) => JSON.parse(wasmMod.scon_to_json(s)),
+        minify: wasmMod.scon_minify,
+        expand: wasmMod.scon_expand,
+    };
+    console.log('  WASM module loaded: wasm/pkg/scon_wasm_bg.wasm');
+} catch (e) {
+    console.log('  WASM module not available:', e.message);
+}
+
 // ============================================================================
 // CLI args
 // ============================================================================
@@ -222,6 +241,13 @@ for (const [datasetName, data] of Object.entries(datasets)) {
 
     r.encode = { json: jsonEnc, scon: sconEnc, scon_dedup: sconDedupEnc };
 
+    // --- WASM Encoding ---
+    if (WASM) {
+        const wasmEnc = benchmarkTiming(() => WASM.encode(data), ITERATIONS);
+        console.log(`    WASM.encode:      ${wasmEnc.median.toFixed(3)}ms (p95: ${wasmEnc.p95.toFixed(3)}ms, p99: ${wasmEnc.p99.toFixed(3)}ms) — ${Math.round(wasmEnc.ops_per_sec)} ops/s`);
+        r.encode.wasm = wasmEnc;
+    }
+
     // --- Decoding Time ---
     console.log(`  Decoding Time (${ITERATIONS} iterations):`);
 
@@ -236,14 +262,33 @@ for (const [datasetName, data] of Object.entries(datasets)) {
 
     r.decode = { json: jsonDec, scon: sconDec, scon_min: sconMinDec };
 
+    // --- WASM Decoding ---
+    if (WASM) {
+        const wasmDec = benchmarkTiming(() => WASM.decode(sconStr), ITERATIONS);
+        console.log(`    WASM.decode:      ${wasmDec.median.toFixed(3)}ms (p95: ${wasmDec.p95.toFixed(3)}ms, p99: ${wasmDec.p99.toFixed(3)}ms) — ${Math.round(wasmDec.ops_per_sec)} ops/s`);
+        r.decode.wasm = wasmDec;
+
+        const wasmV2Dec = benchmarkTiming(() => WASM.decodeViaJson(sconStr), ITERATIONS);
+        console.log(`    WASM→JSON.parse:  ${wasmV2Dec.median.toFixed(3)}ms (p95: ${wasmV2Dec.p95.toFixed(3)}ms, p99: ${wasmV2Dec.p99.toFixed(3)}ms) — ${Math.round(wasmV2Dec.ops_per_sec)} ops/s`);
+        r.decode.wasm_v2 = wasmV2Dec;
+    }
+
     // --- Minify/Expand ---
     console.log(`  Minify/Expand (${ITERATIONS} iterations):`);
 
     const minBench = benchmarkTiming(() => SCON.minify(sconStr), ITERATIONS);
-    console.log(`    minify:           ${minBench.median.toFixed(3)}ms — ${Math.round(minBench.ops_per_sec)} ops/s`);
+    console.log(`    minify(JS):       ${minBench.median.toFixed(3)}ms — ${Math.round(minBench.ops_per_sec)} ops/s`);
 
     const expBench = benchmarkTiming(() => SCON.expand(sconMinStr), ITERATIONS);
-    console.log(`    expand:           ${expBench.median.toFixed(3)}ms — ${Math.round(expBench.ops_per_sec)} ops/s`);
+    console.log(`    expand(JS):       ${expBench.median.toFixed(3)}ms — ${Math.round(expBench.ops_per_sec)} ops/s`);
+
+    if (WASM) {
+        const wasmMinBench = benchmarkTiming(() => WASM.minify(sconStr), ITERATIONS);
+        console.log(`    minify(WASM):     ${wasmMinBench.median.toFixed(3)}ms — ${Math.round(wasmMinBench.ops_per_sec)} ops/s`);
+        const wasmExpBench = benchmarkTiming(() => WASM.expand(sconMinStr, 1), ITERATIONS);
+        console.log(`    expand(WASM):     ${wasmExpBench.median.toFixed(3)}ms — ${Math.round(wasmExpBench.ops_per_sec)} ops/s`);
+        r.minify_expand_wasm = { minify: wasmMinBench, expand: wasmExpBench };
+    }
 
     r.minify_expand = {
         minify: minBench,
@@ -298,6 +343,12 @@ for (const [datasetName, data] of Object.entries(datasets)) {
     const minRoundtripData = JSON.stringify(minDecoded) === JSON.stringify(data);
     console.log(`  Min roundtrip:      ${minRoundtripData ? 'OK (data)' : 'FAIL'}`);
 
+    if (WASM) {
+        const wasmDecoded = WASM.decode(sconStr);
+        const wasmRt = JSON.stringify(wasmDecoded) === JSON.stringify(data);
+        console.log(`  WASM roundtrip:     ${wasmRt ? 'OK' : 'FAIL'}`);
+    }
+
     results.push(r);
     console.log();
 }
@@ -326,30 +377,40 @@ for (const r of results) {
         + pad(saving, 10, true));
 }
 
-console.log('\nParsing Time — median ms (p95 / p99):');
-console.log(pad('Dataset', 20) + pad('JSON.parse', 22, true) + pad('SCON.decode', 22, true) + pad('Ratio', 10, true));
-console.log('─'.repeat(74));
+console.log('\nDecode Time — median ms:');
+console.log(pad('Dataset', 18) + pad('JSON.parse', 12, true) + pad('SCON(JS)', 12, true) + pad('WASM(v1)', 12, true) + pad('WASM(v2)', 12, true) + pad('JS/JSON', 9, true) + pad('v2/JSON', 9, true));
+console.log('─'.repeat(84));
 for (const r of results) {
     const jd = r.decode.json;
     const sd = r.decode.scon;
-    const ratio = jd.median > 0 ? (sd.median / jd.median).toFixed(1) + 'x' : 'N/A';
-    console.log(pad(r.dataset, 20)
-        + pad(`${jd.median.toFixed(2)} (${jd.p95.toFixed(2)}/${jd.p99.toFixed(2)})`, 22, true)
-        + pad(`${sd.median.toFixed(2)} (${sd.p95.toFixed(2)}/${sd.p99.toFixed(2)})`, 22, true)
-        + pad(ratio, 10, true));
+    const wd = r.decode.wasm;
+    const w2 = r.decode.wasm_v2;
+    const jsRatio = jd.median > 0 ? (sd.median / jd.median).toFixed(1) + 'x' : 'N/A';
+    const v2Ratio = w2 && jd.median > 0 ? (w2.median / jd.median).toFixed(1) + 'x' : 'N/A';
+    console.log(pad(r.dataset, 18)
+        + pad(jd.median.toFixed(3), 12, true)
+        + pad(sd.median.toFixed(3), 12, true)
+        + pad(wd ? wd.median.toFixed(3) : '—', 12, true)
+        + pad(w2 ? w2.median.toFixed(3) : '—', 12, true)
+        + pad(jsRatio, 9, true)
+        + pad(v2Ratio, 9, true));
 }
 
-console.log('\nEncoding Time — median ms (p95 / p99):');
-console.log(pad('Dataset', 20) + pad('JSON.stringify', 22, true) + pad('SCON.encode', 22, true) + pad('Ratio', 10, true));
-console.log('─'.repeat(74));
+console.log('\nEncode Time — median ms (JSON.stringify | SCON JS | SCON WASM):');
+console.log(pad('Dataset', 20) + pad('JSON.stringify', 15, true) + pad('SCON(JS)', 15, true) + pad('SCON(WASM)', 15, true) + pad('JS/JSON', 10, true) + pad('WASM/JSON', 10, true));
+console.log('─'.repeat(85));
 for (const r of results) {
     const je = r.encode.json;
     const se = r.encode.scon;
-    const ratio = je.median > 0 ? (se.median / je.median).toFixed(1) + 'x' : 'N/A';
+    const we = r.encode.wasm;
+    const jsRatio = je.median > 0 ? (se.median / je.median).toFixed(1) + 'x' : 'N/A';
+    const wasmRatio = we && je.median > 0 ? (we.median / je.median).toFixed(1) + 'x' : 'N/A';
     console.log(pad(r.dataset, 20)
-        + pad(`${je.median.toFixed(2)} (${je.p95.toFixed(2)}/${je.p99.toFixed(2)})`, 22, true)
-        + pad(`${se.median.toFixed(2)} (${se.p95.toFixed(2)}/${se.p99.toFixed(2)})`, 22, true)
-        + pad(ratio, 10, true));
+        + pad(je.median.toFixed(3), 15, true)
+        + pad(se.median.toFixed(3), 15, true)
+        + pad(we ? we.median.toFixed(3) : '—', 15, true)
+        + pad(jsRatio, 10, true)
+        + pad(wasmRatio, 10, true));
 }
 
 console.log('\nDeduplication (autoExtract):');

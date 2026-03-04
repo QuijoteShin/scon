@@ -84,6 +84,7 @@ All outputs share a standardized schema with `fixture_source`, payload sizes (in
 | **PHP** | `json_encode`/`json_decode` (C extension) | Userland PHP | `bench/bench.php` |
 | **PHP (ext)** | `json_encode`/`json_decode` (C extension) | Rust native via ext-php-rs | `bench/bench_ext.php` |
 | **JavaScript** | `JSON.stringify`/`JSON.parse` (V8 native) | Userland JS | `bench/bench.mjs` |
+| **JS + WASM** | `JSON.stringify`/`JSON.parse` (V8 native) | Rust tape decoder via WebAssembly | `bench/bench.mjs` |
 | **Rust** | `serde_json` / `simd-json` (native) | `scon-core` crate (native Rust) | `scon-bench` binary |
 
 The Rust benchmark provides the fairest format-vs-format comparison since both sides are native compiled code. PHP and JS benchmarks show real-world performance where SCON runs in userland against C/C++ JSON engines.
@@ -119,6 +120,48 @@ Encode overhead (3.1x) is structural, not FFI: SCON's tabular detection scans ar
 | Encode DB | 4.9x | **3.1x** | **36% faster** |
 
 The zero-intermediate architecture (tape→Zval direct, Zval→SCON writer direct) eliminated the dominant bottleneck. This is the same pattern that makes PHP's built-in `json_decode` fast: parse and emit PHP types in one pass, no intermediate AST.
+
+### WebAssembly module (Rust tape decoder via wasm-bindgen)
+
+The WASM module compiles the Rust tape decoder to WebAssembly for browser and Node.js use. Architecture: SCON string → tape decoder inside WASM → JSON string → single boundary crossing → `JSON.parse` (V8 native C++) materializes the object. Same zero-intermediate pattern as ext-php and rs/.
+
+Two decode strategies were benchmarked:
+- **v1 (multi-crossing)**: tape → JsValue directly via `js_sys` calls (thousands of boundary crossings per decode)
+- **v2 (single-crossing)**: tape → JSON string inside WASM → one string return → `JSON.parse` in V8
+
+#### Decode performance (Node.js, 200 iterations)
+
+| Operation | JSON native | SCON JS | WASM v1 | WASM v2 | v2 vs JSON | v2 vs JS |
+|-----------|----------:|--------:|--------:|--------:|-----------:|---------:|
+| Decode OpenAPI | 0.36 ms | 1.50 ms | 2.54 ms | **1.08 ms** | 3.0x | **28% faster** |
+| Decode Config | 0.34 ms | 1.68 ms | 3.03 ms | **1.19 ms** | 3.5x | **29% faster** |
+| Decode DB | 0.07 ms | 0.54 ms | 0.59 ms | **0.26 ms** | 3.6x | **52% faster** |
+
+v1 (multi-crossing) was slower than JS userland due to WASM↔JS boundary overhead (~130ns per `Reflect::set`/`JsValue::from_str` call, thousands per decode). v2 eliminates this with a single string crossing — the industry standard pattern used by swc, biome, esbuild.
+
+#### Encode, minify, expand
+
+| Operation | JSON native | SCON JS | SCON WASM | WASM vs JSON |
+|-----------|----------:|--------:|----------:|-------------:|
+| Encode OpenAPI | 0.23 ms | 1.30 ms | 1.27 ms | 5.5x |
+| Minify OpenAPI | — | 0.43 ms | **0.32 ms** | — |
+| Expand OpenAPI | — | 1.08 ms | **0.22 ms** | — |
+
+Minify/expand are string→string operations (no object materialization) — WASM is **3–5x faster** than JS userland with zero boundary overhead.
+
+#### Wire-to-parsed: where SCON+WASM wins
+
+With dedup enabled, SCON(dedup+min) reduces OpenAPI from 49 KB to 16.6 KB (-66%). The 3x decode overhead vs `JSON.parse` is offset by transmission savings on bandwidth-limited links:
+
+| Bandwidth | JSON (49 KB) | SCON+WASM (16.6 KB) | Saving |
+|-----------|------------:|-----------:|-------:|
+| 1 Mbps (LoRa/satellite) | 392 ms | **134 ms** | **-66%** |
+| 10 Mbps (WiFi/mobile) | 39 ms | **14 ms** | **-64%** |
+| 100 Mbps (Ethernet) | 4.3 ms | **2.4 ms** | **-44%** |
+
+SCON+WASM wins at any bandwidth under ~500 Mbps. Crossover is gigabit local where transmission time is negligible and raw parse speed dominates.
+
+WASM binary: 170 KB raw, 70 KB gzipped.
 
 ## Payload comparison (4 variants)
 
@@ -306,6 +349,8 @@ Each entry documents a change, its algorithmic impact, and measured result.
 | P17 | `TapeDecoder` — flat `Vec<Node>`, zero IndexMap/Vec per node | O(1) amortized push vs O(K) IndexMap insert per object | Decode **faster than serde_json**: 0.7–0.9x |
 | P18 | Single-pass tape with cached-peek `LineIter` — eliminates `Vec<ParsedLine>` | O(L) single pass vs O(L) classify + O(L) parse (two-pass) | Decode **faster than simd-json**: 0.8x on OpenAPI/DB. Tape went from 0.287→**0.195ms** OpenAPI |
 | P19 | PHP ext zero-intermediate: tape→Zval direct decode, Zval→SCON writer encode | Eliminates `Value` construction + traversal (was ~70% of decode time) | PHP decode **2.5x→1.2x** vs json_decode. Encode **5.1x→3.1x**. Ext **9-18x faster** than PHP userland |
+| P20 | WASM v1: tape→JsValue via js_sys (multi-crossing) | O(N) boundary crossings at ~130ns each | Slower than JS userland (7-9x vs JSON.parse) — boundary overhead dominates |
+| P21 | WASM v2: tape→JSON string inside WASM, single crossing + JSON.parse | O(1) boundary crossing, V8 native C++ materializes | Decode **3.0x** vs JSON.parse, **28-52% faster** than JS userland. Minify/expand **3-5x faster** |
 
 **Complexity note on P10:** Before the fix, when `decode_object` called a child recursively, the child processed N lines, then the parent re-scanned the same N lines to find the next sibling (`while depth > base_depth { i++ }`). At depth D, the same line could be scanned D times — O(N×D) total. With the fix, each line is visited exactly once — O(N).
 
@@ -332,6 +377,10 @@ Each entry documents a change, its algorithmic impact, and measured result.
 9. **Industrial protocols are SCON's best case.** ISA-95 equipment hierarchies (87% smaller, 80% faster decode than simd-json), Sparkplug B metrics (47% smaller, 38% faster), and IIoT telemetry batches (29% smaller) all benefit from tabular encoding and structural repetition. These are real payloads from OPC UA, MQTT, and MES systems.
 
 10. **SCON tape beats simd-json on all 7 benchmarked datasets except Config Records.** The pattern: structured/tabular data with repetitive keys favors SCON. Deep nesting without tabular structure (Config) is the one case where simd-json leads.
+
+11. **WASM single-crossing beats JS userland by 28–52%.** The v1 multi-crossing approach (tape→JsValue via js_sys) was slower than pure JS due to ~130ns per boundary call. v2 (tape→JSON string inside WASM + `JSON.parse`) eliminates this. Industry standard pattern used by swc, biome, esbuild.
+
+12. **SCON+WASM wins on the wire under 500 Mbps.** With dedup, SCON is 66% smaller (OpenAPI). The 3x decode overhead vs `JSON.parse` is offset by transmission savings — relevant for mobile, WiFi, and any bandwidth-constrained environment.
 
 ### Note on cross-language JSON sizes
 
@@ -436,5 +485,6 @@ TreeHash uses [xxHash128](https://github.com/Cyan4973/xxHash) (XXH3 family) for 
 | Line buffer (decoder) | `$parsedLines[]` | `parsedLines[]` | `Vec<ParsedLine>` | Two-pass parse |
 | Tape (decoder) | — | — | `Vec<Node<'a>>` | Single-pass flat decode |
 | PHP ext bridge | — | — | tape→Zval direct | Zero-intermediate FFI (P19) |
+| WASM bridge | — | — | tape→JSON string→`JSON.parse` | Single-crossing decode (P21) |
 
 `IndexMap` (Rust, from the `indexmap` crate) provides O(1) average-case lookup with preserved insertion order — a hash map backed by an auxiliary `Vec`. This is important for round-trip fidelity: keys come out in the same order they went in.
