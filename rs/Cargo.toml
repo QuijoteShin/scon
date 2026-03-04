@@ -16,6 +16,7 @@ itoa = "1"
 ryu = "1"
 memchr = "2"
 compact_str = "0.9"
+simd-json = "0.14"
 
 [[bin]]
 name = "scon-bench"
