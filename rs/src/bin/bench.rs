@@ -83,9 +83,13 @@ fn main() {
 fn load_fixtures() -> Vec<(String, String, serde_json::Value, Value)> {
     let fixture_dir = Path::new("bench/fixtures");
     let datasets_meta = [
-        ("openapi_specs",  "OpenAPI Specs"),
-        ("config_records", "Config Records"),
-        ("db_exports",     "DB Exports"),
+        ("openapi_specs",       "OpenAPI Specs"),
+        ("config_records",      "Config Records"),
+        ("db_exports",          "DB Exports"),
+        ("sparkplug_b",         "Sparkplug B"),
+        ("iot_telemetry",       "IoT Telemetry"),
+        ("iot_telemetry_large", "IoT Telemetry (large)"),
+        ("isa95_equipment",     "ISA-95 Equipment"),
     ];
 
     println!("Loading fixtures from bench/fixtures/...");

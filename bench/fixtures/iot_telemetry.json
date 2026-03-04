@@ -1,0 +1,1119 @@
+{
+  "batchId": "batch-2026-03-03T14:35:22Z-gateway-01",
+  "gatewayId": "edge-gateway-automotive-fab-002",
+  "facility": "Detroit Manufacturing Complex - Building C",
+  "location": {
+    "latitude": 42.3314,
+    "longitude": -83.0456,
+    "site": "warehouse-automation-zone-3"
+  },
+  "batchTimestamp": "2026-03-03T14:35:22Z",
+  "batchWindow": {
+    "start": "2026-03-03T14:30:00Z",
+    "end": "2026-03-03T14:35:00Z",
+    "intervalSeconds": 30
+  },
+  "protocol": "HTTP/3",
+  "transport": "QUIC",
+  "payloadCompression": "recommended",
+  "readings": [
+    {
+      "deviceId": "PUMP-COOLANT-01",
+      "deviceType": "centrifugal_pump",
+      "location": "production-line-A",
+      "timestamp": "2026-03-03T14:30:30Z",
+      "readings": [
+        {
+          "sensorType": "flow_rate",
+          "value": 45.2,
+          "unit": "liters_per_minute",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "pressure",
+          "value": 3.8,
+          "unit": "bar",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "temperature",
+          "value": 62.1,
+          "unit": "celsius",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "vibration",
+          "value": 2.3,
+          "unit": "mm_per_second",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "PUMP-COOLANT-01",
+      "deviceType": "centrifugal_pump",
+      "location": "production-line-A",
+      "timestamp": "2026-03-03T14:31:00Z",
+      "readings": [
+        {
+          "sensorType": "flow_rate",
+          "value": 45.5,
+          "unit": "liters_per_minute",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "pressure",
+          "value": 3.9,
+          "unit": "bar",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "temperature",
+          "value": 62.3,
+          "unit": "celsius",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "vibration",
+          "value": 2.2,
+          "unit": "mm_per_second",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "PUMP-COOLANT-01",
+      "deviceType": "centrifugal_pump",
+      "location": "production-line-A",
+      "timestamp": "2026-03-03T14:31:30Z",
+      "readings": [
+        {
+          "sensorType": "flow_rate",
+          "value": 45.1,
+          "unit": "liters_per_minute",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "pressure",
+          "value": 3.8,
+          "unit": "bar",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "temperature",
+          "value": 62.0,
+          "unit": "celsius",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "vibration",
+          "value": 2.4,
+          "unit": "mm_per_second",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "MOTOR-DRIVE-01",
+      "deviceType": "electric_motor",
+      "location": "production-line-A",
+      "timestamp": "2026-03-03T14:30:30Z",
+      "readings": [
+        {
+          "sensorType": "motor_current",
+          "value": 22.5,
+          "unit": "amperes",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "motor_speed",
+          "value": 1498,
+          "unit": "revolutions_per_minute",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "temperature",
+          "value": 58.7,
+          "unit": "celsius",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "power_factor",
+          "value": 0.92,
+          "unit": "dimensionless",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "MOTOR-DRIVE-01",
+      "deviceType": "electric_motor",
+      "location": "production-line-A",
+      "timestamp": "2026-03-03T14:31:00Z",
+      "readings": [
+        {
+          "sensorType": "motor_current",
+          "value": 22.8,
+          "unit": "amperes",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "motor_speed",
+          "value": 1499,
+          "unit": "revolutions_per_minute",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "temperature",
+          "value": 59.1,
+          "unit": "celsius",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "power_factor",
+          "value": 0.93,
+          "unit": "dimensionless",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "MOTOR-DRIVE-01",
+      "deviceType": "electric_motor",
+      "location": "production-line-A",
+      "timestamp": "2026-03-03T14:31:30Z",
+      "readings": [
+        {
+          "sensorType": "motor_current",
+          "value": 22.3,
+          "unit": "amperes",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "motor_speed",
+          "value": 1500,
+          "unit": "revolutions_per_minute",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "temperature",
+          "value": 58.9,
+          "unit": "celsius",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "power_factor",
+          "value": 0.92,
+          "unit": "dimensionless",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "SERVO-VALVE-01",
+      "deviceType": "servo_valve",
+      "location": "hydraulic-control-bay",
+      "timestamp": "2026-03-03T14:30:30Z",
+      "readings": [
+        {
+          "sensorType": "spool_position",
+          "value": 2.1,
+          "unit": "millimeters",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "coil_voltage",
+          "value": 24.0,
+          "unit": "volts",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "pressure_drop",
+          "value": 1.2,
+          "unit": "bar",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "SERVO-VALVE-01",
+      "deviceType": "servo_valve",
+      "location": "hydraulic-control-bay",
+      "timestamp": "2026-03-03T14:31:00Z",
+      "readings": [
+        {
+          "sensorType": "spool_position",
+          "value": 2.2,
+          "unit": "millimeters",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "coil_voltage",
+          "value": 24.1,
+          "unit": "volts",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "pressure_drop",
+          "value": 1.1,
+          "unit": "bar",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "SERVO-VALVE-01",
+      "deviceType": "servo_valve",
+      "location": "hydraulic-control-bay",
+      "timestamp": "2026-03-03T14:31:30Z",
+      "readings": [
+        {
+          "sensorType": "spool_position",
+          "value": 2.0,
+          "unit": "millimeters",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "coil_voltage",
+          "value": 23.9,
+          "unit": "volts",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "pressure_drop",
+          "value": 1.3,
+          "unit": "bar",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "CONVEYOR-MOTOR-02",
+      "deviceType": "dc_motor",
+      "location": "production-line-B",
+      "timestamp": "2026-03-03T14:30:30Z",
+      "readings": [
+        {
+          "sensorType": "motor_current",
+          "value": 18.5,
+          "unit": "amperes",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "motor_speed",
+          "value": 595,
+          "unit": "revolutions_per_minute",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "temperature",
+          "value": 55.2,
+          "unit": "celsius",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "load_percentage",
+          "value": 62,
+          "unit": "percent",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "CONVEYOR-MOTOR-02",
+      "deviceType": "dc_motor",
+      "location": "production-line-B",
+      "timestamp": "2026-03-03T14:31:00Z",
+      "readings": [
+        {
+          "sensorType": "motor_current",
+          "value": 18.8,
+          "unit": "amperes",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "motor_speed",
+          "value": 595,
+          "unit": "revolutions_per_minute",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "temperature",
+          "value": 55.4,
+          "unit": "celsius",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "load_percentage",
+          "value": 63,
+          "unit": "percent",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "CONVEYOR-MOTOR-02",
+      "deviceType": "dc_motor",
+      "location": "production-line-B",
+      "timestamp": "2026-03-03T14:31:30Z",
+      "readings": [
+        {
+          "sensorType": "motor_current",
+          "value": 18.2,
+          "unit": "amperes",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "motor_speed",
+          "value": 595,
+          "unit": "revolutions_per_minute",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "temperature",
+          "value": 55.1,
+          "unit": "celsius",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "load_percentage",
+          "value": 61,
+          "unit": "percent",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "TEMPERATURE-SENSOR-03",
+      "deviceType": "rtd_temperature",
+      "location": "cooling-loop-zone-1",
+      "timestamp": "2026-03-03T14:30:30Z",
+      "readings": [
+        {
+          "sensorType": "temperature",
+          "value": 48.3,
+          "unit": "celsius",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "sensor_resistance",
+          "value": 119.4,
+          "unit": "ohms",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "TEMPERATURE-SENSOR-03",
+      "deviceType": "rtd_temperature",
+      "location": "cooling-loop-zone-1",
+      "timestamp": "2026-03-03T14:31:00Z",
+      "readings": [
+        {
+          "sensorType": "temperature",
+          "value": 48.5,
+          "unit": "celsius",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "sensor_resistance",
+          "value": 119.6,
+          "unit": "ohms",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "TEMPERATURE-SENSOR-03",
+      "deviceType": "rtd_temperature",
+      "location": "cooling-loop-zone-1",
+      "timestamp": "2026-03-03T14:31:30Z",
+      "readings": [
+        {
+          "sensorType": "temperature",
+          "value": 48.2,
+          "unit": "celsius",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "sensor_resistance",
+          "value": 119.2,
+          "unit": "ohms",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "PRESSURE-TRANSDUCER-04",
+      "deviceType": "pressure_transmitter",
+      "location": "hydraulic-reservoir",
+      "timestamp": "2026-03-03T14:30:30Z",
+      "readings": [
+        {
+          "sensorType": "pressure",
+          "value": 210.5,
+          "unit": "bar",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "transmitter_output",
+          "value": 11.8,
+          "unit": "milliamperes",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "PRESSURE-TRANSDUCER-04",
+      "deviceType": "pressure_transmitter",
+      "location": "hydraulic-reservoir",
+      "timestamp": "2026-03-03T14:31:00Z",
+      "readings": [
+        {
+          "sensorType": "pressure",
+          "value": 210.8,
+          "unit": "bar",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "transmitter_output",
+          "value": 11.9,
+          "unit": "milliamperes",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "PRESSURE-TRANSDUCER-04",
+      "deviceType": "pressure_transmitter",
+      "location": "hydraulic-reservoir",
+      "timestamp": "2026-03-03T14:31:30Z",
+      "readings": [
+        {
+          "sensorType": "pressure",
+          "value": 210.3,
+          "unit": "bar",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "transmitter_output",
+          "value": 11.7,
+          "unit": "milliamperes",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "VIBRATION-MONITOR-05",
+      "deviceType": "accelerometer",
+      "location": "main-spindle-assembly",
+      "timestamp": "2026-03-03T14:30:30Z",
+      "readings": [
+        {
+          "sensorType": "vibration_x",
+          "value": 0.85,
+          "unit": "mm_per_second",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "vibration_y",
+          "value": 0.92,
+          "unit": "mm_per_second",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "vibration_z",
+          "value": 1.23,
+          "unit": "mm_per_second",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "peak_frequency",
+          "value": 3840,
+          "unit": "hertz",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "VIBRATION-MONITOR-05",
+      "deviceType": "accelerometer",
+      "location": "main-spindle-assembly",
+      "timestamp": "2026-03-03T14:31:00Z",
+      "readings": [
+        {
+          "sensorType": "vibration_x",
+          "value": 0.87,
+          "unit": "mm_per_second",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "vibration_y",
+          "value": 0.90,
+          "unit": "mm_per_second",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "vibration_z",
+          "value": 1.21,
+          "unit": "mm_per_second",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "peak_frequency",
+          "value": 3840,
+          "unit": "hertz",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "VIBRATION-MONITOR-05",
+      "deviceType": "accelerometer",
+      "location": "main-spindle-assembly",
+      "timestamp": "2026-03-03T14:31:30Z",
+      "readings": [
+        {
+          "sensorType": "vibration_x",
+          "value": 0.83,
+          "unit": "mm_per_second",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "vibration_y",
+          "value": 0.94,
+          "unit": "mm_per_second",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "vibration_z",
+          "value": 1.25,
+          "unit": "mm_per_second",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "peak_frequency",
+          "value": 3840,
+          "unit": "hertz",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "HUMIDITY-SENSOR-06",
+      "deviceType": "capacitive_humidity",
+      "location": "climate-control-room",
+      "timestamp": "2026-03-03T14:30:30Z",
+      "readings": [
+        {
+          "sensorType": "humidity",
+          "value": 42.5,
+          "unit": "percent_relative_humidity",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "temperature",
+          "value": 21.3,
+          "unit": "celsius",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "HUMIDITY-SENSOR-06",
+      "deviceType": "capacitive_humidity",
+      "location": "climate-control-room",
+      "timestamp": "2026-03-03T14:31:00Z",
+      "readings": [
+        {
+          "sensorType": "humidity",
+          "value": 42.8,
+          "unit": "percent_relative_humidity",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "temperature",
+          "value": 21.4,
+          "unit": "celsius",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "HUMIDITY-SENSOR-06",
+      "deviceType": "capacitive_humidity",
+      "location": "climate-control-room",
+      "timestamp": "2026-03-03T14:31:30Z",
+      "readings": [
+        {
+          "sensorType": "humidity",
+          "value": 42.3,
+          "unit": "percent_relative_humidity",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "temperature",
+          "value": 21.2,
+          "unit": "celsius",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "POWER-METER-07",
+      "deviceType": "digital_power_meter",
+      "location": "production-line-A-subpanel",
+      "timestamp": "2026-03-03T14:30:30Z",
+      "readings": [
+        {
+          "sensorType": "voltage_phase_a",
+          "value": 230.2,
+          "unit": "volts",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "voltage_phase_b",
+          "value": 229.8,
+          "unit": "volts",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "voltage_phase_c",
+          "value": 230.5,
+          "unit": "volts",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "current_phase_a",
+          "value": 145.3,
+          "unit": "amperes",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "power_factor",
+          "value": 0.91,
+          "unit": "dimensionless",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "POWER-METER-07",
+      "deviceType": "digital_power_meter",
+      "location": "production-line-A-subpanel",
+      "timestamp": "2026-03-03T14:31:00Z",
+      "readings": [
+        {
+          "sensorType": "voltage_phase_a",
+          "value": 230.4,
+          "unit": "volts",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "voltage_phase_b",
+          "value": 230.1,
+          "unit": "volts",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "voltage_phase_c",
+          "value": 230.3,
+          "unit": "volts",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "current_phase_a",
+          "value": 146.1,
+          "unit": "amperes",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "power_factor",
+          "value": 0.92,
+          "unit": "dimensionless",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "POWER-METER-07",
+      "deviceType": "digital_power_meter",
+      "location": "production-line-A-subpanel",
+      "timestamp": "2026-03-03T14:31:30Z",
+      "readings": [
+        {
+          "sensorType": "voltage_phase_a",
+          "value": 230.1,
+          "unit": "volts",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "voltage_phase_b",
+          "value": 229.9,
+          "unit": "volts",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "voltage_phase_c",
+          "value": 230.4,
+          "unit": "volts",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "current_phase_a",
+          "value": 144.8,
+          "unit": "amperes",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "power_factor",
+          "value": 0.91,
+          "unit": "dimensionless",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "FLOW-METER-08",
+      "deviceType": "turbine_flow_meter",
+      "location": "coolant-supply-line",
+      "timestamp": "2026-03-03T14:30:30Z",
+      "readings": [
+        {
+          "sensorType": "flow_rate",
+          "value": 120.5,
+          "unit": "liters_per_minute",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "accumulated_volume",
+          "value": 3621.2,
+          "unit": "liters",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "temperature",
+          "value": 45.8,
+          "unit": "celsius",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "FLOW-METER-08",
+      "deviceType": "turbine_flow_meter",
+      "location": "coolant-supply-line",
+      "timestamp": "2026-03-03T14:31:00Z",
+      "readings": [
+        {
+          "sensorType": "flow_rate",
+          "value": 121.2,
+          "unit": "liters_per_minute",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "accumulated_volume",
+          "value": 3623.3,
+          "unit": "liters",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "temperature",
+          "value": 46.1,
+          "unit": "celsius",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "FLOW-METER-08",
+      "deviceType": "turbine_flow_meter",
+      "location": "coolant-supply-line",
+      "timestamp": "2026-03-03T14:31:30Z",
+      "readings": [
+        {
+          "sensorType": "flow_rate",
+          "value": 119.8,
+          "unit": "liters_per_minute",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "accumulated_volume",
+          "value": 3625.3,
+          "unit": "liters",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "temperature",
+          "value": 45.9,
+          "unit": "celsius",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "LEVEL-SENSOR-09",
+      "deviceType": "ultrasonic_level",
+      "location": "chemical-tank-a",
+      "timestamp": "2026-03-03T14:30:30Z",
+      "readings": [
+        {
+          "sensorType": "level",
+          "value": 2145,
+          "unit": "millimeters",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "level_percentage",
+          "value": 85.8,
+          "unit": "percent",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "distance_to_surface",
+          "value": 355,
+          "unit": "millimeters",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "LEVEL-SENSOR-09",
+      "deviceType": "ultrasonic_level",
+      "location": "chemical-tank-a",
+      "timestamp": "2026-03-03T14:31:00Z",
+      "readings": [
+        {
+          "sensorType": "level",
+          "value": 2143,
+          "unit": "millimeters",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "level_percentage",
+          "value": 85.7,
+          "unit": "percent",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "distance_to_surface",
+          "value": 357,
+          "unit": "millimeters",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "LEVEL-SENSOR-09",
+      "deviceType": "ultrasonic_level",
+      "location": "chemical-tank-a",
+      "timestamp": "2026-03-03T14:31:30Z",
+      "readings": [
+        {
+          "sensorType": "level",
+          "value": 2148,
+          "unit": "millimeters",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "level_percentage",
+          "value": 85.9,
+          "unit": "percent",
+          "quality": "good",
+          "status": "normal"
+        },
+        {
+          "sensorType": "distance_to_surface",
+          "value": 352,
+          "unit": "millimeters",
+          "quality": "good",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "ALARM-BEACON-10",
+      "deviceType": "status_indicator",
+      "location": "production-line-A",
+      "timestamp": "2026-03-03T14:30:30Z",
+      "readings": [
+        {
+          "sensorType": "beacon_state",
+          "value": "green",
+          "unit": "status",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "buzzer_active",
+          "value": false,
+          "unit": "boolean",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "ALARM-BEACON-10",
+      "deviceType": "status_indicator",
+      "location": "production-line-A",
+      "timestamp": "2026-03-03T14:31:00Z",
+      "readings": [
+        {
+          "sensorType": "beacon_state",
+          "value": "green",
+          "unit": "status",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "buzzer_active",
+          "value": false,
+          "unit": "boolean",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    },
+    {
+      "deviceId": "ALARM-BEACON-10",
+      "deviceType": "status_indicator",
+      "location": "production-line-A",
+      "timestamp": "2026-03-03T14:31:30Z",
+      "readings": [
+        {
+          "sensorType": "beacon_state",
+          "value": "green",
+          "unit": "status",
+          "quality": "excellent",
+          "status": "normal"
+        },
+        {
+          "sensorType": "buzzer_active",
+          "value": false,
+          "unit": "boolean",
+          "quality": "excellent",
+          "status": "normal"
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "totalReadings": 100,
+    "deviceCount": 10,
+    "averageReadingsPerDevice": 10,
+    "dataQuality": {
+      "excellent": 28,
+      "good": 72
+    },
+    "allDevicesHealthy": true,
+    "requiredCompression": true,
+    "reason": "Edge-to-cloud telemetry over cellular/QUIC with 30-second batch intervals"
+  }
+}

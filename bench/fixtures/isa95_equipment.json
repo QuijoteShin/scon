@@ -1,0 +1,1278 @@
+{
+  "enterprise": {
+    "id": "JFACTORY",
+    "description": "Juice Factory Enterprise",
+    "version": "1.0",
+    "sites": [
+      {
+        "id": "JFACTORY.SPRINGFIELD",
+        "description": "Springfield Production Facility",
+        "location": "Springfield, IL",
+        "timezone": "America/Chicago",
+        "equipmentLevel": "Site",
+        "properties": {
+          "capacity": 10000,
+          "capacityUom": "liters/day",
+          "status": "active",
+          "lastMaintenance": "2026-02-15",
+          "maintenanceSchedule": "monthly"
+        },
+        "areas": [
+          {
+            "id": "JFACTORY.SPRINGFIELD.RECEIVING",
+            "description": "Raw Material Receiving",
+            "equipmentLevel": "Area",
+            "properties": {
+              "capacity": 3000,
+              "capacityUom": "liters/day",
+              "status": "active",
+              "lastMaintenance": "2026-02-10",
+              "maintenanceSchedule": "monthly"
+            },
+            "workcenters": [
+              {
+                "id": "JFACTORY.SPRINGFIELD.RECEIVING.DOCK",
+                "description": "Loading Dock",
+                "equipmentLevel": "WorkCenter",
+                "properties": {
+                  "capacity": 1500,
+                  "capacityUom": "liters/hour",
+                  "status": "active",
+                  "lastMaintenance": "2026-02-12",
+                  "maintenanceSchedule": "bi-weekly"
+                },
+                "workunits": [
+                  {
+                    "id": "JFACTORY.SPRINGFIELD.RECEIVING.DOCK.LD1",
+                    "description": "Loading Dock 1",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 750,
+                      "capacityUom": "liters/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-12",
+                      "maintenanceSchedule": "bi-weekly",
+                      "position": 1,
+                      "loadingType": "tanker"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.RECEIVING.DOCK.LD1.PUMP1",
+                        "description": "Transfer Pump 1",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "capacity": 750,
+                          "capacityUom": "liters/hour",
+                          "status": "active",
+                          "lastMaintenance": "2026-02-12",
+                          "maintenanceSchedule": "bi-weekly",
+                          "serialNumber": "PUMP-2024-001",
+                          "manufacturer": "FlowTech",
+                          "model": "FT-750-HV",
+                          "installDate": "2024-01-15",
+                          "temperature": 22.5,
+                          "temperatureUom": "°C",
+                          "pressure": 2.5,
+                          "pressureUom": "bar"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "JFACTORY.SPRINGFIELD.RECEIVING.DOCK.LD2",
+                    "description": "Loading Dock 2",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 750,
+                      "capacityUom": "liters/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-12",
+                      "maintenanceSchedule": "bi-weekly",
+                      "position": 2,
+                      "loadingType": "tanker"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.RECEIVING.DOCK.LD2.PUMP2",
+                        "description": "Transfer Pump 2",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "capacity": 750,
+                          "capacityUom": "liters/hour",
+                          "status": "standby",
+                          "lastMaintenance": "2026-02-12",
+                          "maintenanceSchedule": "bi-weekly",
+                          "serialNumber": "PUMP-2024-002",
+                          "manufacturer": "FlowTech",
+                          "model": "FT-750-HV",
+                          "installDate": "2024-01-15",
+                          "temperature": 21.0,
+                          "temperatureUom": "°C",
+                          "pressure": 0.0,
+                          "pressureUom": "bar"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "JFACTORY.SPRINGFIELD.RECEIVING.TANK",
+                "description": "Raw Material Storage",
+                "equipmentLevel": "WorkCenter",
+                "properties": {
+                  "capacity": 5000,
+                  "capacityUom": "liters",
+                  "status": "active",
+                  "lastMaintenance": "2026-01-20",
+                  "maintenanceSchedule": "quarterly"
+                },
+                "workunits": [
+                  {
+                    "id": "JFACTORY.SPRINGFIELD.RECEIVING.TANK.RT1",
+                    "description": "Receiving Tank 1",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 2500,
+                      "capacityUom": "liters",
+                      "currentVolume": 1850,
+                      "currentVolumeUom": "liters",
+                      "status": "active",
+                      "lastMaintenance": "2026-01-20",
+                      "maintenanceSchedule": "quarterly",
+                      "temperature": 18.5,
+                      "temperatureUom": "°C"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.RECEIVING.TANK.RT1.LEVEL",
+                        "description": "Level Sensor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-01",
+                          "maintenanceSchedule": "monthly",
+                          "serialNumber": "SENSOR-2024-045",
+                          "manufacturer": "AutomationDirect",
+                          "model": "AR-ULT-4-20",
+                          "range": "0-3000",
+                          "rangeUom": "liters"
+                        }
+                      },
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.RECEIVING.TANK.RT1.TEMP",
+                        "description": "Temperature Sensor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-01",
+                          "maintenanceSchedule": "monthly",
+                          "serialNumber": "SENSOR-2024-046",
+                          "manufacturer": "AutomationDirect",
+                          "model": "AR-PT100",
+                          "range": "0-100",
+                          "rangeUom": "°C"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "JFACTORY.SPRINGFIELD.RECEIVING.TANK.RT2",
+                    "description": "Receiving Tank 2",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 2500,
+                      "capacityUom": "liters",
+                      "currentVolume": 2245,
+                      "currentVolumeUom": "liters",
+                      "status": "active",
+                      "lastMaintenance": "2026-01-20",
+                      "maintenanceSchedule": "quarterly",
+                      "temperature": 19.2,
+                      "temperatureUom": "°C"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.RECEIVING.TANK.RT2.LEVEL",
+                        "description": "Level Sensor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-01",
+                          "maintenanceSchedule": "monthly",
+                          "serialNumber": "SENSOR-2024-047",
+                          "manufacturer": "AutomationDirect",
+                          "model": "AR-ULT-4-20",
+                          "range": "0-3000",
+                          "rangeUom": "liters"
+                        }
+                      },
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.RECEIVING.TANK.RT2.TEMP",
+                        "description": "Temperature Sensor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-01",
+                          "maintenanceSchedule": "monthly",
+                          "serialNumber": "SENSOR-2024-048",
+                          "manufacturer": "AutomationDirect",
+                          "model": "AR-PT100",
+                          "range": "0-100",
+                          "rangeUom": "°C"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "JFACTORY.SPRINGFIELD.PROCESSING",
+            "description": "Juice Processing",
+            "equipmentLevel": "Area",
+            "properties": {
+              "capacity": 4000,
+              "capacityUom": "liters/day",
+              "status": "active",
+              "lastMaintenance": "2026-02-08",
+              "maintenanceSchedule": "monthly"
+            },
+            "workcenters": [
+              {
+                "id": "JFACTORY.SPRINGFIELD.PROCESSING.FILTER",
+                "description": "Filtration Line",
+                "equipmentLevel": "WorkCenter",
+                "properties": {
+                  "capacity": 2000,
+                  "capacityUom": "liters/hour",
+                  "status": "active",
+                  "lastMaintenance": "2026-02-08",
+                  "maintenanceSchedule": "monthly"
+                },
+                "workunits": [
+                  {
+                    "id": "JFACTORY.SPRINGFIELD.PROCESSING.FILTER.UNIT1",
+                    "description": "Filter Unit 1",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 1000,
+                      "capacityUom": "liters/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-08",
+                      "maintenanceSchedule": "monthly",
+                      "meshSize": 50,
+                      "meshSizeUom": "microns"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.PROCESSING.FILTER.UNIT1.MOTOR",
+                        "description": "Drive Motor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-08",
+                          "maintenanceSchedule": "monthly",
+                          "serialNumber": "MOTOR-2023-012",
+                          "manufacturer": "Siemens",
+                          "model": "1LA7-150-2A-80M",
+                          "power": 15,
+                          "powerUom": "kW",
+                          "voltage": 400,
+                          "voltageUom": "V",
+                          "frequency": 50,
+                          "frequencyUom": "Hz",
+                          "rpms": 1470
+                        }
+                      },
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.PROCESSING.FILTER.UNIT1.PRESSURE",
+                        "description": "Pressure Sensor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-01",
+                          "maintenanceSchedule": "monthly",
+                          "serialNumber": "SENSOR-2024-050",
+                          "manufacturer": "Hydac",
+                          "model": "HPS-1250-01-A-000-A-G24",
+                          "range": "0-250",
+                          "rangeUom": "bar"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "JFACTORY.SPRINGFIELD.PROCESSING.FILTER.UNIT2",
+                    "description": "Filter Unit 2",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 1000,
+                      "capacityUom": "liters/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-08",
+                      "maintenanceSchedule": "monthly",
+                      "meshSize": 50,
+                      "meshSizeUom": "microns"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.PROCESSING.FILTER.UNIT2.MOTOR",
+                        "description": "Drive Motor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-08",
+                          "maintenanceSchedule": "monthly",
+                          "serialNumber": "MOTOR-2023-013",
+                          "manufacturer": "Siemens",
+                          "model": "1LA7-150-2A-80M",
+                          "power": 15,
+                          "powerUom": "kW",
+                          "voltage": 400,
+                          "voltageUom": "V",
+                          "frequency": 50,
+                          "frequencyUom": "Hz",
+                          "rpms": 1470
+                        }
+                      },
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.PROCESSING.FILTER.UNIT2.PRESSURE",
+                        "description": "Pressure Sensor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-01",
+                          "maintenanceSchedule": "monthly",
+                          "serialNumber": "SENSOR-2024-051",
+                          "manufacturer": "Hydac",
+                          "model": "HPS-1250-01-A-000-A-G24",
+                          "range": "0-250",
+                          "rangeUom": "bar"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "JFACTORY.SPRINGFIELD.PROCESSING.PASTEUR",
+                "description": "Pasteurization",
+                "equipmentLevel": "WorkCenter",
+                "properties": {
+                  "capacity": 2000,
+                  "capacityUom": "liters/hour",
+                  "status": "active",
+                  "lastMaintenance": "2026-02-05",
+                  "maintenanceSchedule": "monthly"
+                },
+                "workunits": [
+                  {
+                    "id": "JFACTORY.SPRINGFIELD.PROCESSING.PASTEUR.HTST",
+                    "description": "HTST Pasteurizer",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 2000,
+                      "capacityUom": "liters/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-05",
+                      "maintenanceSchedule": "monthly",
+                      "temperature": 72.0,
+                      "temperatureUom": "°C",
+                      "holdTime": 15,
+                      "holdTimeUom": "seconds"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.PROCESSING.PASTEUR.HTST.HEATER",
+                        "description": "Heating Exchanger",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-05",
+                          "maintenanceSchedule": "monthly",
+                          "serialNumber": "HX-2022-045",
+                          "manufacturer": "GEA",
+                          "model": "Phe-X100",
+                          "capacity": 2000,
+                          "capacityUom": "liters/hour"
+                        }
+                      },
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.PROCESSING.PASTEUR.HTST.COOLER",
+                        "description": "Cooling Exchanger",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-05",
+                          "maintenanceSchedule": "monthly",
+                          "serialNumber": "HX-2022-046",
+                          "manufacturer": "GEA",
+                          "model": "Phe-X100",
+                          "capacity": 2000,
+                          "capacityUom": "liters/hour"
+                        }
+                      },
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.PROCESSING.PASTEUR.HTST.SENSOR",
+                        "description": "Temperature Control Probe",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-01",
+                          "maintenanceSchedule": "monthly",
+                          "serialNumber": "SENSOR-2024-060",
+                          "manufacturer": "AutomationDirect",
+                          "model": "AR-PT100",
+                          "range": "0-100",
+                          "rangeUom": "°C"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "JFACTORY.SPRINGFIELD.PACKAGING",
+            "description": "Packaging Line",
+            "equipmentLevel": "Area",
+            "properties": {
+              "capacity": 3000,
+              "capacityUom": "units/day",
+              "status": "active",
+              "lastMaintenance": "2026-02-14",
+              "maintenanceSchedule": "weekly"
+            },
+            "workcenters": [
+              {
+                "id": "JFACTORY.SPRINGFIELD.PACKAGING.LINE1",
+                "description": "Packaging Line 1",
+                "equipmentLevel": "WorkCenter",
+                "properties": {
+                  "capacity": 1500,
+                  "capacityUom": "units/hour",
+                  "status": "active",
+                  "lastMaintenance": "2026-02-14",
+                  "maintenanceSchedule": "weekly",
+                  "packageType": "1L bottle"
+                },
+                "workunits": [
+                  {
+                    "id": "JFACTORY.SPRINGFIELD.PACKAGING.LINE1.FILLER",
+                    "description": "Filler Unit",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 500,
+                      "capacityUom": "units/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-14",
+                      "maintenanceSchedule": "weekly",
+                      "nozzles": 12,
+                      "accuracy": 2.0,
+                      "accuracyUom": "mL"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.PACKAGING.LINE1.FILLER.SERVO",
+                        "description": "Servo Motor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-14",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "SERVO-2023-089",
+                          "manufacturer": "Bosch Rexroth",
+                          "model": "MSK070E-0450-NN-M3-UP1-NNNN",
+                          "power": 4.5,
+                          "powerUom": "kW"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "JFACTORY.SPRINGFIELD.PACKAGING.LINE1.CAPPER",
+                    "description": "Capper Unit",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 500,
+                      "capacityUom": "units/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-14",
+                      "maintenanceSchedule": "weekly",
+                      "torque": 8.5,
+                      "torqueUom": "N·m"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.PACKAGING.LINE1.CAPPER.MOTOR",
+                        "description": "Drive Motor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-14",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "MOTOR-2023-098",
+                          "manufacturer": "ABB",
+                          "model": "IE3-100L2-4",
+                          "power": 2.2,
+                          "powerUom": "kW",
+                          "voltage": 400,
+                          "voltageUom": "V",
+                          "rpms": 1450
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "JFACTORY.SPRINGFIELD.PACKAGING.LINE1.LABELER",
+                    "description": "Label Applicator",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 500,
+                      "capacityUom": "units/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-14",
+                      "maintenanceSchedule": "weekly",
+                      "labelWidth": 100,
+                      "labelWidthUom": "mm",
+                      "labelHeight": 150,
+                      "labelHeightUom": "mm"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.PACKAGING.LINE1.LABELER.STEPPER",
+                        "description": "Stepper Motor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-14",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "STEPPER-2023-105",
+                          "manufacturer": "NEMA",
+                          "model": "NEMA-23",
+                          "torque": 2.76,
+                          "torqueUom": "N·m"
+                        }
+                      },
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.PACKAGING.LINE1.LABELER.SENSOR",
+                        "description": "Position Sensor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-01",
+                          "maintenanceSchedule": "monthly",
+                          "serialNumber": "SENSOR-2024-070",
+                          "manufacturer": "Sick",
+                          "model": "S65-4"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "JFACTORY.SPRINGFIELD.PACKAGING.LINE2",
+                "description": "Packaging Line 2",
+                "equipmentLevel": "WorkCenter",
+                "properties": {
+                  "capacity": 1500,
+                  "capacityUom": "units/hour",
+                  "status": "inactive",
+                  "lastMaintenance": "2026-02-10",
+                  "maintenanceSchedule": "weekly",
+                  "packageType": "1L bottle"
+                },
+                "workunits": [
+                  {
+                    "id": "JFACTORY.SPRINGFIELD.PACKAGING.LINE2.FILLER",
+                    "description": "Filler Unit",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 500,
+                      "capacityUom": "units/hour",
+                      "status": "inactive",
+                      "lastMaintenance": "2026-02-10",
+                      "maintenanceSchedule": "weekly",
+                      "nozzles": 12,
+                      "accuracy": 2.0,
+                      "accuracyUom": "mL"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.PACKAGING.LINE2.FILLER.SERVO",
+                        "description": "Servo Motor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "inactive",
+                          "lastMaintenance": "2026-02-10",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "SERVO-2023-090",
+                          "manufacturer": "Bosch Rexroth",
+                          "model": "MSK070E-0450-NN-M3-UP1-NNNN",
+                          "power": 4.5,
+                          "powerUom": "kW"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "JFACTORY.SPRINGFIELD.PACKAGING.LINE2.CAPPER",
+                    "description": "Capper Unit",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 500,
+                      "capacityUom": "units/hour",
+                      "status": "inactive",
+                      "lastMaintenance": "2026-02-10",
+                      "maintenanceSchedule": "weekly",
+                      "torque": 8.5,
+                      "torqueUom": "N·m"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.SPRINGFIELD.PACKAGING.LINE2.CAPPER.MOTOR",
+                        "description": "Drive Motor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "inactive",
+                          "lastMaintenance": "2026-02-10",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "MOTOR-2023-099",
+                          "manufacturer": "ABB",
+                          "model": "IE3-100L2-4",
+                          "power": 2.2,
+                          "powerUom": "kW",
+                          "voltage": 400,
+                          "voltageUom": "V",
+                          "rpms": 1450
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "JFACTORY.CHICAGO",
+        "description": "Chicago Distribution Facility",
+        "location": "Chicago, IL",
+        "timezone": "America/Chicago",
+        "equipmentLevel": "Site",
+        "properties": {
+          "capacity": 15000,
+          "capacityUom": "units/day",
+          "status": "active",
+          "lastMaintenance": "2026-02-16",
+          "maintenanceSchedule": "monthly"
+        },
+        "areas": [
+          {
+            "id": "JFACTORY.CHICAGO.WAREHOUSE",
+            "description": "Product Warehouse",
+            "equipmentLevel": "Area",
+            "properties": {
+              "capacity": 50000,
+              "capacityUom": "units",
+              "status": "active",
+              "lastMaintenance": "2026-02-16",
+              "maintenanceSchedule": "monthly"
+            },
+            "workcenters": [
+              {
+                "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV1",
+                "description": "Conveyor Line 1",
+                "equipmentLevel": "WorkCenter",
+                "properties": {
+                  "capacity": 7500,
+                  "capacityUom": "units/hour",
+                  "status": "active",
+                  "lastMaintenance": "2026-02-16",
+                  "maintenanceSchedule": "weekly",
+                  "length": 120,
+                  "lengthUom": "meters"
+                },
+                "workunits": [
+                  {
+                    "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV1.SECTION1",
+                    "description": "Conveyor Section 1",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 7500,
+                      "capacityUom": "units/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-16",
+                      "maintenanceSchedule": "weekly",
+                      "length": 30,
+                      "lengthUom": "meters",
+                      "speed": 0.5,
+                      "speedUom": "m/s"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV1.SECTION1.MOTOR",
+                        "description": "Drive Motor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-16",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "MOTOR-2023-150",
+                          "manufacturer": "Siemens",
+                          "model": "1LE1-100-2AA-80M",
+                          "power": 3.0,
+                          "powerUom": "kW",
+                          "voltage": 400,
+                          "voltageUom": "V",
+                          "rpms": 1450
+                        }
+                      },
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV1.SECTION1.BRAKE",
+                        "description": "Fail-Safe Brake",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-16",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "BRAKE-2023-045",
+                          "manufacturer": "Mayr",
+                          "model": "ROBA-stop-SP"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV1.SECTION2",
+                    "description": "Conveyor Section 2",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 7500,
+                      "capacityUom": "units/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-16",
+                      "maintenanceSchedule": "weekly",
+                      "length": 30,
+                      "lengthUom": "meters",
+                      "speed": 0.5,
+                      "speedUom": "m/s"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV1.SECTION2.MOTOR",
+                        "description": "Drive Motor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-16",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "MOTOR-2023-151",
+                          "manufacturer": "Siemens",
+                          "model": "1LE1-100-2AA-80M",
+                          "power": 3.0,
+                          "powerUom": "kW",
+                          "voltage": 400,
+                          "voltageUom": "V",
+                          "rpms": 1450
+                        }
+                      },
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV1.SECTION2.BRAKE",
+                        "description": "Fail-Safe Brake",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-16",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "BRAKE-2023-046",
+                          "manufacturer": "Mayr",
+                          "model": "ROBA-stop-SP"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV1.SECTION3",
+                    "description": "Conveyor Section 3",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 7500,
+                      "capacityUom": "units/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-16",
+                      "maintenanceSchedule": "weekly",
+                      "length": 30,
+                      "lengthUom": "meters",
+                      "speed": 0.5,
+                      "speedUom": "m/s"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV1.SECTION3.MOTOR",
+                        "description": "Drive Motor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-16",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "MOTOR-2023-152",
+                          "manufacturer": "Siemens",
+                          "model": "1LE1-100-2AA-80M",
+                          "power": 3.0,
+                          "powerUom": "kW",
+                          "voltage": 400,
+                          "voltageUom": "V",
+                          "rpms": 1450
+                        }
+                      },
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV1.SECTION3.BRAKE",
+                        "description": "Fail-Safe Brake",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-16",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "BRAKE-2023-047",
+                          "manufacturer": "Mayr",
+                          "model": "ROBA-stop-SP"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV1.SECTION4",
+                    "description": "Conveyor Section 4",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 7500,
+                      "capacityUom": "units/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-16",
+                      "maintenanceSchedule": "weekly",
+                      "length": 30,
+                      "lengthUom": "meters",
+                      "speed": 0.5,
+                      "speedUom": "m/s"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV1.SECTION4.MOTOR",
+                        "description": "Drive Motor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-16",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "MOTOR-2023-153",
+                          "manufacturer": "Siemens",
+                          "model": "1LE1-100-2AA-80M",
+                          "power": 3.0,
+                          "powerUom": "kW",
+                          "voltage": 400,
+                          "voltageUom": "V",
+                          "rpms": 1450
+                        }
+                      },
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV1.SECTION4.BRAKE",
+                        "description": "Fail-Safe Brake",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-16",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "BRAKE-2023-048",
+                          "manufacturer": "Mayr",
+                          "model": "ROBA-stop-SP"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV2",
+                "description": "Conveyor Line 2",
+                "equipmentLevel": "WorkCenter",
+                "properties": {
+                  "capacity": 7500,
+                  "capacityUom": "units/hour",
+                  "status": "active",
+                  "lastMaintenance": "2026-02-14",
+                  "maintenanceSchedule": "weekly",
+                  "length": 120,
+                  "lengthUom": "meters"
+                },
+                "workunits": [
+                  {
+                    "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV2.SECTION1",
+                    "description": "Conveyor Section 1",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 7500,
+                      "capacityUom": "units/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-14",
+                      "maintenanceSchedule": "weekly",
+                      "length": 30,
+                      "lengthUom": "meters",
+                      "speed": 0.5,
+                      "speedUom": "m/s"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV2.SECTION1.MOTOR",
+                        "description": "Drive Motor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-14",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "MOTOR-2023-160",
+                          "manufacturer": "Siemens",
+                          "model": "1LE1-100-2AA-80M",
+                          "power": 3.0,
+                          "powerUom": "kW",
+                          "voltage": 400,
+                          "voltageUom": "V",
+                          "rpms": 1450
+                        }
+                      },
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV2.SECTION1.BRAKE",
+                        "description": "Fail-Safe Brake",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-14",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "BRAKE-2023-050",
+                          "manufacturer": "Mayr",
+                          "model": "ROBA-stop-SP"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV2.SECTION2",
+                    "description": "Conveyor Section 2",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 7500,
+                      "capacityUom": "units/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-14",
+                      "maintenanceSchedule": "weekly",
+                      "length": 30,
+                      "lengthUom": "meters",
+                      "speed": 0.5,
+                      "speedUom": "m/s"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV2.SECTION2.MOTOR",
+                        "description": "Drive Motor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-14",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "MOTOR-2023-161",
+                          "manufacturer": "Siemens",
+                          "model": "1LE1-100-2AA-80M",
+                          "power": 3.0,
+                          "powerUom": "kW",
+                          "voltage": 400,
+                          "voltageUom": "V",
+                          "rpms": 1450
+                        }
+                      },
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV2.SECTION2.BRAKE",
+                        "description": "Fail-Safe Brake",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-14",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "BRAKE-2023-051",
+                          "manufacturer": "Mayr",
+                          "model": "ROBA-stop-SP"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV2.SECTION3",
+                    "description": "Conveyor Section 3",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 7500,
+                      "capacityUom": "units/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-14",
+                      "maintenanceSchedule": "weekly",
+                      "length": 30,
+                      "lengthUom": "meters",
+                      "speed": 0.5,
+                      "speedUom": "m/s"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV2.SECTION3.MOTOR",
+                        "description": "Drive Motor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-14",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "MOTOR-2023-162",
+                          "manufacturer": "Siemens",
+                          "model": "1LE1-100-2AA-80M",
+                          "power": 3.0,
+                          "powerUom": "kW",
+                          "voltage": 400,
+                          "voltageUom": "V",
+                          "rpms": 1450
+                        }
+                      },
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV2.SECTION3.BRAKE",
+                        "description": "Fail-Safe Brake",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-14",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "BRAKE-2023-052",
+                          "manufacturer": "Mayr",
+                          "model": "ROBA-stop-SP"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV2.SECTION4",
+                    "description": "Conveyor Section 4",
+                    "equipmentLevel": "WorkUnit",
+                    "properties": {
+                      "capacity": 7500,
+                      "capacityUom": "units/hour",
+                      "status": "active",
+                      "lastMaintenance": "2026-02-14",
+                      "maintenanceSchedule": "weekly",
+                      "length": 30,
+                      "lengthUom": "meters",
+                      "speed": 0.5,
+                      "speedUom": "m/s"
+                    },
+                    "equipment": [
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV2.SECTION4.MOTOR",
+                        "description": "Drive Motor",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-14",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "MOTOR-2023-163",
+                          "manufacturer": "Siemens",
+                          "model": "1LE1-100-2AA-80M",
+                          "power": 3.0,
+                          "powerUom": "kW",
+                          "voltage": 400,
+                          "voltageUom": "V",
+                          "rpms": 1450
+                        }
+                      },
+                      {
+                        "id": "JFACTORY.CHICAGO.WAREHOUSE.CONV2.SECTION4.BRAKE",
+                        "description": "Fail-Safe Brake",
+                        "equipmentLevel": "Equipment",
+                        "properties": {
+                          "status": "active",
+                          "lastMaintenance": "2026-02-14",
+                          "maintenanceSchedule": "weekly",
+                          "serialNumber": "BRAKE-2023-053",
+                          "manufacturer": "Mayr",
+                          "model": "ROBA-stop-SP"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "productionSchedules": [
+      {
+        "id": "SCHED-2026-001",
+        "startTime": "2026-03-03T06:00:00Z",
+        "endTime": "2026-03-03T14:00:00Z",
+        "description": "Morning shift - Standard Orange Juice",
+        "status": "active",
+        "equipment": "JFACTORY.SPRINGFIELD.PACKAGING.LINE1",
+        "product": "Orange Juice 1L",
+        "plannedQuantity": 4000,
+        "plannedQuantityUom": "units",
+        "production": [
+          {
+            "timestamp": "2026-03-03T06:15:00Z",
+            "producedQuantity": 350,
+            "producedQuantityUom": "units",
+            "goodQuantity": 345,
+            "defectQuantity": 5,
+            "downtime": 0,
+            "downtimeUom": "minutes"
+          },
+          {
+            "timestamp": "2026-03-03T07:15:00Z",
+            "producedQuantity": 380,
+            "producedQuantityUom": "units",
+            "goodQuantity": 378,
+            "defectQuantity": 2,
+            "downtime": 5,
+            "downtimeUom": "minutes"
+          },
+          {
+            "timestamp": "2026-03-03T08:15:00Z",
+            "producedQuantity": 390,
+            "producedQuantityUom": "units",
+            "goodQuantity": 390,
+            "defectQuantity": 0,
+            "downtime": 0,
+            "downtimeUom": "minutes"
+          }
+        ]
+      },
+      {
+        "id": "SCHED-2026-002",
+        "startTime": "2026-03-03T14:00:00Z",
+        "endTime": "2026-03-03T22:00:00Z",
+        "description": "Afternoon shift - Apple Juice Production",
+        "status": "scheduled",
+        "equipment": "JFACTORY.SPRINGFIELD.PACKAGING.LINE1",
+        "product": "Apple Juice 1L",
+        "plannedQuantity": 4000,
+        "plannedQuantityUom": "units"
+      },
+      {
+        "id": "SCHED-2026-003",
+        "startTime": "2026-03-03T22:00:00Z",
+        "endTime": "2026-03-04T06:00:00Z",
+        "description": "Night shift - Maintenance Window",
+        "status": "scheduled",
+        "equipment": "JFACTORY.SPRINGFIELD.PACKAGING.LINE1",
+        "product": "Maintenance",
+        "plannedQuantity": 0,
+        "plannedQuantityUom": "units"
+      }
+    ],
+    "materials": [
+      {
+        "id": "MAT-ORANGE-001",
+        "description": "Fresh Orange Juice Concentrate",
+        "category": "Raw Material",
+        "supplier": "Florida Citrus Co.",
+        "unitOfMeasure": "liters",
+        "density": 1.04,
+        "densityUom": "g/mL",
+        "temperature": 4.0,
+        "temperatureUom": "°C",
+        "shelf_life": 180,
+        "shelf_lifeUom": "days",
+        "batchSize": 500,
+        "batchSizeUom": "liters",
+        "properties": {
+          "brix": 42.0,
+          "acidity": 0.8,
+          "color": "orange"
+        }
+      },
+      {
+        "id": "MAT-APPLE-001",
+        "description": "Fresh Apple Juice Concentrate",
+        "category": "Raw Material",
+        "supplier": "Washington Apple Inc.",
+        "unitOfMeasure": "liters",
+        "density": 1.02,
+        "densityUom": "g/mL",
+        "temperature": 4.0,
+        "temperatureUom": "°C",
+        "shelf_life": 180,
+        "shelf_lifeUom": "days",
+        "batchSize": 500,
+        "batchSizeUom": "liters",
+        "properties": {
+          "brix": 38.5,
+          "acidity": 0.6,
+          "color": "yellow"
+        }
+      },
+      {
+        "id": "MAT-BOTTLE-1L",
+        "description": "1L Plastic Bottle PET",
+        "category": "Packaging",
+        "supplier": "PlastiCorp Ltd.",
+        "unitOfMeasure": "units",
+        "weight": 35.0,
+        "weightUom": "grams",
+        "shelf_life": 730,
+        "shelf_lifeUom": "days",
+        "batchSize": 10000,
+        "batchSizeUom": "units",
+        "properties": {
+          "material": "PET",
+          "recyclable": true,
+          "transparency": "clear"
+        }
+      },
+      {
+        "id": "MAT-CAP-SCREW",
+        "description": "Screw Cap 28mm",
+        "category": "Packaging",
+        "supplier": "CapMaster Solutions",
+        "unitOfMeasure": "units",
+        "weight": 2.5,
+        "weightUom": "grams",
+        "shelf_life": 730,
+        "shelf_lifeUom": "days",
+        "batchSize": 50000,
+        "batchSizeUom": "units",
+        "properties": {
+          "color": "white",
+          "material": "polypropylene",
+          "tamperEvident": true
+        }
+      },
+      {
+        "id": "MAT-LABEL-OJ",
+        "description": "Label Orange Juice",
+        "category": "Packaging",
+        "supplier": "Label Masters Inc.",
+        "unitOfMeasure": "units",
+        "weight": 1.2,
+        "weightUom": "grams",
+        "shelf_life": 365,
+        "shelf_lifeUom": "days",
+        "batchSize": 25000,
+        "batchSizeUom": "units",
+        "properties": {
+          "dimension": "100x150mm",
+          "material": "paper",
+          "printType": "offset"
+        }
+      }
+    ]
+  }
+}

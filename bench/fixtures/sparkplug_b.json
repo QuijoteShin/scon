@@ -1,0 +1,328 @@
+{
+  "timestamp": 1740969600000,
+  "metrics": [
+    {
+      "name": "Motor_1/Temperature",
+      "alias": 1,
+      "datatype": 9,
+      "value": 72.5,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Motor_1/Vibration",
+      "alias": 2,
+      "datatype": 9,
+      "value": 0.34,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Motor_1/RPM",
+      "alias": 3,
+      "datatype": 5,
+      "value": 1500,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Motor_1/Status",
+      "alias": 4,
+      "datatype": 11,
+      "value": "Running",
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Motor_1/Power_Consumption",
+      "alias": 5,
+      "datatype": 9,
+      "value": 45.3,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Pump_1/FlowRate",
+      "alias": 6,
+      "datatype": 9,
+      "value": 120.5,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Pump_1/Pressure",
+      "alias": 7,
+      "datatype": 9,
+      "value": 85.2,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Pump_1/Temperature",
+      "alias": 8,
+      "datatype": 9,
+      "value": 48.7,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Pump_1/Runtime_Hours",
+      "alias": 9,
+      "datatype": 5,
+      "value": 2847,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Pump_1/Status",
+      "alias": 10,
+      "datatype": 11,
+      "value": "Operational",
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Compressor_1/Pressure",
+      "alias": 11,
+      "datatype": 9,
+      "value": 95.6,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Compressor_1/Temperature",
+      "alias": 12,
+      "datatype": 9,
+      "value": 65.3,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Compressor_1/Vibration",
+      "alias": 13,
+      "datatype": 9,
+      "value": 0.18,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Compressor_1/Efficiency",
+      "alias": 14,
+      "datatype": 9,
+      "value": 92.4,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Compressor_1/Runtime_Hours",
+      "alias": 15,
+      "datatype": 5,
+      "value": 5234,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Heat_Exchanger_1/Inlet_Temp",
+      "alias": 16,
+      "datatype": 9,
+      "value": 75.2,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Heat_Exchanger_1/Outlet_Temp",
+      "alias": 17,
+      "datatype": 9,
+      "value": 62.8,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Heat_Exchanger_1/Efficiency",
+      "alias": 18,
+      "datatype": 9,
+      "value": 88.5,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Heat_Exchanger_1/Pressure_Drop",
+      "alias": 19,
+      "datatype": 9,
+      "value": 2.3,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Tank_1/Level",
+      "alias": 20,
+      "datatype": 9,
+      "value": 78.5,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Tank_1/Temperature",
+      "alias": 21,
+      "datatype": 9,
+      "value": 52.1,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Tank_1/Density",
+      "alias": 22,
+      "datatype": 9,
+      "value": 0.945,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Tank_1/Alarm_High_Level",
+      "alias": 23,
+      "datatype": 1,
+      "value": false,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Tank_1/Alarm_Low_Level",
+      "alias": 24,
+      "datatype": 1,
+      "value": false,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Valve_1/Position",
+      "alias": 25,
+      "datatype": 9,
+      "value": 45.0,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Valve_1/Status",
+      "alias": 26,
+      "datatype": 11,
+      "value": "Open",
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Valve_2/Position",
+      "alias": 27,
+      "datatype": 9,
+      "value": 100.0,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "Valve_2/Status",
+      "alias": 28,
+      "datatype": 11,
+      "value": "Fully_Open",
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Ambient_Temperature",
+      "alias": 29,
+      "datatype": 9,
+      "value": 22.5,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Humidity",
+      "alias": 30,
+      "datatype": 9,
+      "value": 45.2,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Power_Input",
+      "alias": 31,
+      "datatype": 9,
+      "value": 415.0,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Power_Factor",
+      "alias": 32,
+      "datatype": 9,
+      "value": 0.98,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Total_Energy_Consumption",
+      "alias": 33,
+      "datatype": 5,
+      "value": 245680,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Uptime_Hours",
+      "alias": 34,
+      "datatype": 5,
+      "value": 8760,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Device_Count",
+      "alias": 35,
+      "datatype": 5,
+      "value": 12,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Active_Alarms",
+      "alias": 36,
+      "datatype": 5,
+      "value": 0,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Warnings",
+      "alias": 37,
+      "datatype": 5,
+      "value": 2,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Last_Maintenance",
+      "alias": 38,
+      "datatype": 11,
+      "value": "2024-12-15T14:30:00Z",
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Model",
+      "alias": 39,
+      "datatype": 11,
+      "value": "EdgeNode-Pro-v2.1",
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Serial_Number",
+      "alias": 40,
+      "datatype": 11,
+      "value": "EN-2024-0087-F",
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Firmware_Version",
+      "alias": 41,
+      "datatype": 11,
+      "value": "2.1.4",
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Location",
+      "alias": 42,
+      "datatype": 11,
+      "value": "Plant-A-Building-3-Floor-2",
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Network_Status",
+      "alias": 43,
+      "datatype": 11,
+      "value": "Connected",
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Signal_Strength",
+      "alias": 44,
+      "datatype": 9,
+      "value": -45.0,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/Memory_Usage",
+      "alias": 45,
+      "datatype": 9,
+      "value": 68.3,
+      "timestamp": 1740969600000
+    },
+    {
+      "name": "System/CPU_Temperature",
+      "alias": 46,
+      "datatype": 9,
+      "value": 48.2,
+      "timestamp": 1740969600000
+    }
+  ],
+  "seq": 42
+}
