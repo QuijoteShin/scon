@@ -9,7 +9,7 @@ use std::fs;
 use std::path::Path;
 
 use scon_core::value::json_to_scon;
-use scon_core::{Encoder, Decoder, Minifier, Value};
+use scon_core::{Encoder, Decoder, Minifier, Value, BorrowedDecoder};
 use flate2::write::GzEncoder;
 use flate2::Compression;
 
@@ -177,9 +177,24 @@ fn run_benchmark(name: &str, json_str: &str, json_val: &serde_json::Value, scon_
         scon_min_decode_times.push(start.elapsed().as_nanos() as f64 / 1_000_000.0);
     }
 
+    // Borrowed decoder — zero-copy strings from input, arena for escaped strings
+    let mut bump = bumpalo::Bump::with_capacity(64 * 1024);
+    for _ in 0..warmup {
+        bump.reset();
+        let _ = BorrowedDecoder::new(&bump).decode(&scon_encoded);
+    }
+    let mut scon_borrowed_times = Vec::with_capacity(iters);
+    for _ in 0..iters {
+        bump.reset();
+        let start = Instant::now();
+        let _ = BorrowedDecoder::new(&bump).decode(&scon_encoded);
+        scon_borrowed_times.push(start.elapsed().as_nanos() as f64 / 1_000_000.0);
+    }
+
     json_decode_times.sort_by(|a, b| a.partial_cmp(b).unwrap());
     scon_decode_times.sort_by(|a, b| a.partial_cmp(b).unwrap());
     scon_min_decode_times.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    scon_borrowed_times.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
     println!("  Decoding Time ({} iters):", iters);
     println!("    serde_json:       {:.3}ms (p95: {:.3}ms, p99: {:.3}ms) — {} ops/s",
@@ -197,8 +212,15 @@ fn run_benchmark(name: &str, json_str: &str, json_val: &serde_json::Value, scon_
         percentile(&scon_min_decode_times, 95),
         percentile(&scon_min_decode_times, 99),
         ops_per_sec(&scon_min_decode_times));
+    println!("    SCON(borrowed):   {:.3}ms (p95: {:.3}ms, p99: {:.3}ms) — {} ops/s",
+        percentile(&scon_borrowed_times, 50),
+        percentile(&scon_borrowed_times, 95),
+        percentile(&scon_borrowed_times, 99),
+        ops_per_sec(&scon_borrowed_times));
     let decode_ratio = percentile(&scon_decode_times, 50) / percentile(&json_decode_times, 50);
-    println!("    Ratio:            {:.1}x slower", decode_ratio);
+    let borrowed_ratio = percentile(&scon_borrowed_times, 50) / percentile(&json_decode_times, 50);
+    println!("    Ratio (owned):    {:.1}x slower", decode_ratio);
+    println!("    Ratio (borrowed): {:.1}x slower", borrowed_ratio);
 
     // --- Minify/Expand ---
     let mut expand_times = Vec::with_capacity(iters);
@@ -277,6 +299,7 @@ fn run_benchmark(name: &str, json_str: &str, json_val: &serde_json::Value, scon_
             "json": stats_json(&json_decode_times),
             "scon": stats_json(&scon_decode_times),
             "scon_min": stats_json(&scon_min_decode_times),
+            "scon_borrowed": stats_json(&scon_borrowed_times),
         },
         "minify_expand": {
             "minify": stats_json(&minify_times),

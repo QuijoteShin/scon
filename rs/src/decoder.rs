@@ -571,7 +571,7 @@ impl Decoder {
 
     // memchr3 SIMD — un solo pase vectorizado busca ':', '"', '{' simultáneamente
     // Antes: memchr(:) + contains(") + contains({) = 3 escaneos sobre el mismo prefijo
-    fn find_key_colon(&self, s: &str) -> Option<usize> {
+    pub fn find_key_colon(&self, s: &str) -> Option<usize> {
         let bytes = s.as_bytes();
 
         // SIMD fast-path: memchr3 encuentra el primer ':', '"' o '{' en un solo pase
@@ -784,7 +784,7 @@ impl Decoder {
     }
 
     // P7: memchr2 SIMD — salta segmentos sin escapes ni quotes
-    fn find_closing_quote(&self, s: &str, start: usize) -> Option<usize> {
+    pub fn find_closing_quote(&self, s: &str, start: usize) -> Option<usize> {
         let bytes = s.as_bytes();
         let mut i = start + 1;
         while i < bytes.len() {
@@ -850,7 +850,7 @@ impl Decoder {
     }
 
     //P1.3: Returns &str slice instead of String — zero-copy
-    fn extract_brace_content<'a>(&self, input: &'a str) -> Option<&'a str> {
+    pub fn extract_brace_content<'a>(&self, input: &'a str) -> Option<&'a str> {
         let mut depth = 0i32;
         let mut start = None;
         let mut in_quotes = false;
@@ -879,7 +879,7 @@ impl Decoder {
         None
     }
 
-    fn find_matching_bracket(&self, s: &str, start: usize) -> Option<usize> {
+    pub fn find_matching_bracket(&self, s: &str, start: usize) -> Option<usize> {
         let mut depth = 0i32;
         let mut in_quotes = false;
         let bytes = s.as_bytes();
@@ -902,7 +902,7 @@ impl Decoder {
     }
 
     //P1.2: Returns Vec<&str> slices instead of Vec<String> — zero-copy
-    fn split_top_level<'a>(&self, input: &'a str, delimiter: char) -> Vec<&'a str> {
+    pub fn split_top_level<'a>(&self, input: &'a str, delimiter: char) -> Vec<&'a str> {
         let mut parts = Vec::new();
         let mut seg_start = 0;
         let mut in_quotes = false;

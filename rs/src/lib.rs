@@ -37,11 +37,15 @@ pub mod value;
 pub mod encoder;
 pub mod decoder;
 pub mod minifier;
+pub mod borrowed;
+pub mod tape;
 
 pub use value::Value;
 pub use encoder::Encoder;
 pub use decoder::Decoder;
 pub use minifier::Minifier;
+pub use borrowed::{BorrowedDecoder, BorrowedValue};
+pub use tape::{TapeDecoder, Tape, Node};
 
 // Convenience functions — stateless wrappers, allocate encoder/decoder per call
 
