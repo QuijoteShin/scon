@@ -100,6 +100,9 @@ impl<'alloc> BorrowedDecoder<'alloc> {
             }
         }
 
+        // Pre-scan schema definitions before main parse
+        self.prescan_schema_defs(input);
+
         let line_estimate = input.as_bytes().iter().filter(|&&b| b == b'\n').count() + 1;
         let mut parsed: Vec<ParsedLine<'_>> = Vec::with_capacity(line_estimate);
         let indent = self.indent;
@@ -369,6 +372,23 @@ impl<'alloc> BorrowedDecoder<'alloc> {
         Ok((result, i))
     }
 
+    // --- Schema pre-scan and ref resolution ---
+
+    fn prescan_schema_defs(&mut self, input: &str) {
+        for line in input.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() { continue; }
+            let first = trimmed.as_bytes()[0];
+            if first == b's' && trimmed.starts_with("s:") {
+                self.helper.parse_schema_def(trimmed, "s");
+            } else if first == b'r' && trimmed.starts_with("r:") {
+                self.helper.parse_schema_def(trimmed, "r");
+            } else if trimmed.starts_with("sec:") {
+                self.helper.parse_schema_def(trimmed, "sec");
+            }
+        }
+    }
+
     // --- Parsing helpers (delegate string ops to inner Decoder, build BorrowedValue) ---
 
     fn try_array_header<'a>(&self, content: &'a str) -> Option<ArrayHeader<'a>> {
@@ -538,6 +558,12 @@ impl<'alloc> BorrowedDecoder<'alloc> {
         if t.is_empty() { return BorrowedValue::String(""); }
         if t == "[]" { return BorrowedValue::Array(vec![]); }
         if t == "{}" { return BorrowedValue::Object(BorrowedMap::default()); }
+
+        // Schema reference resolution
+        if t.starts_with("@s:") || t.starts_with("@r:") || t.starts_with("@sec:") {
+            let resolved = self.helper.resolve_reference(t);
+            return self.owned_to_borrowed(&resolved);
+        }
 
         if t.starts_with('"') {
             if let Some(close) = self.helper.find_closing_quote(t, 0) {

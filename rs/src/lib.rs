@@ -39,6 +39,9 @@ pub mod decoder;
 pub mod minifier;
 pub mod borrowed;
 pub mod tape;
+pub mod treehash;
+pub mod schema_registry;
+pub mod validator;
 
 pub use value::Value;
 pub use encoder::Encoder;
@@ -46,6 +49,9 @@ pub use decoder::Decoder;
 pub use minifier::Minifier;
 pub use borrowed::{BorrowedDecoder, BorrowedValue};
 pub use tape::{TapeDecoder, Tape, Node};
+pub use treehash::{TreeHash, HashTreeResult, HashEntry, DiffEntry, DiffKind};
+pub use schema_registry::{SchemaRegistry, DefType};
+pub use validator::{Validator, ValidationMode, ValidationResult};
 
 // Convenience functions — stateless wrappers, allocate encoder/decoder per call
 
@@ -59,6 +65,10 @@ pub fn encode_to(data: &Value, buf: &mut String) {
 
 pub fn encode_with_indent(data: &Value, indent: usize) -> String {
     Encoder::new().with_indent(indent).encode(data)
+}
+
+pub fn encode_with_dedup(data: &Value) -> String {
+    Encoder::new().with_auto_extract(true).encode(data)
 }
 
 pub fn decode(input: &str) -> Result<Value, String> {

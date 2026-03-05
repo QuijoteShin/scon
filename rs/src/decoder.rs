@@ -36,6 +36,7 @@
 //   SCON: two-pass (line array + semantic), CompactString copies (inline but still copies)
 
 use crate::value::{Value, SconMap};
+use crate::schema_registry::{SchemaRegistry, DefType};
 use compact_str::CompactString;
 use memchr::memchr;
 
@@ -43,11 +44,17 @@ pub struct Decoder {
     indent: usize,
     indent_auto_detect: bool,
     scratch: String, // Shared unescape buffer — capacity reused across calls, avoids per-string allocation
+    registry: SchemaRegistry,
 }
 
 impl Decoder {
     pub fn new() -> Self {
-        Self { indent: 1, indent_auto_detect: true, scratch: String::with_capacity(256) }
+        Self {
+            indent: 1,
+            indent_auto_detect: true,
+            scratch: String::with_capacity(256),
+            registry: SchemaRegistry::new(),
+        }
     }
 
     pub fn with_indent(mut self, indent: usize) -> Self {
@@ -98,9 +105,19 @@ impl Decoder {
             // Skip comments and directives — byte check antes de string compare
             if first_byte == b'#' { continue; }
             if first_byte == b'@' && (trimmed.starts_with("@@") || trimmed.starts_with("@use ")) { continue; }
-            if first_byte == b's' && trimmed.starts_with("s:") { continue; }
-            if first_byte == b'r' && trimmed.starts_with("r:") { continue; }
-            if trimmed.starts_with("sec:") { continue; }
+            // Parse schema/response/security definitions into registry
+            if first_byte == b's' && trimmed.starts_with("s:") {
+                self.parse_schema_def(trimmed, "s");
+                continue;
+            }
+            if first_byte == b'r' && trimmed.starts_with("r:") {
+                self.parse_schema_def(trimmed, "r");
+                continue;
+            }
+            if trimmed.starts_with("sec:") {
+                self.parse_schema_def(trimmed, "sec");
+                continue;
+            }
             let spaces = line.len() - line.trim_start_matches(' ').len();
             let depth = if indent > 0 { spaces / indent } else { 0 };
             // Pre-filtro: '[' antes de ':' → candidato a array header (~5% de líneas)
@@ -177,7 +194,15 @@ impl Decoder {
 
                 let segment = input[seg_start..i - semi_count + 1].trim();
                 if !segment.is_empty() && !segment.starts_with('#') {
-                    if !(segment.starts_with("@@") || segment.starts_with("s:") || segment.starts_with("r:") || segment.starts_with("sec:") || segment.starts_with("@use ")) {
+                    if segment.starts_with("@@") || segment.starts_with("@use ") {
+                        // skip directives
+                    } else if segment.starts_with("s:") {
+                        self.parse_schema_def(segment, "s");
+                    } else if segment.starts_with("r:") {
+                        self.parse_schema_def(segment, "r");
+                    } else if segment.starts_with("sec:") {
+                        self.parse_schema_def(segment, "sec");
+                    } else {
                         parsed.push(ParsedLine { depth, content: segment, _line_num: line_num, has_bracket: memchr(b'[', segment.as_bytes()).map_or(false, |bp| memchr(b':', segment.as_bytes()).map_or(false, |cp| bp < cp)) });
                         line_num += 1;
 
@@ -208,7 +233,15 @@ impl Decoder {
         // Último segmento
         let segment = input[seg_start..].trim();
         if !segment.is_empty() && !segment.starts_with('#') {
-            if !(segment.starts_with("@@") || segment.starts_with("s:") || segment.starts_with("r:") || segment.starts_with("sec:") || segment.starts_with("@use ")) {
+            if segment.starts_with("@@") || segment.starts_with("@use ") {
+                // skip directives
+            } else if segment.starts_with("s:") {
+                self.parse_schema_def(segment, "s");
+            } else if segment.starts_with("r:") {
+                self.parse_schema_def(segment, "r");
+            } else if segment.starts_with("sec:") {
+                self.parse_schema_def(segment, "sec");
+            } else {
                 parsed.push(ParsedLine { depth, content: segment, _line_num: line_num, has_bracket: memchr(b'[', segment.as_bytes()).map_or(false, |bp| memchr(b':', segment.as_bytes()).map_or(false, |cp| bp < cp)) });
             }
         }
@@ -687,6 +720,11 @@ impl Decoder {
         if t == "[]" { return Value::Array(vec![]); }
         if t == "{}" { return Value::Object(SconMap::default()); }
 
+        // Schema/response/security reference resolution
+        if t.starts_with("@s:") || t.starts_with("@r:") || t.starts_with("@sec:") {
+            return self.resolve_reference(t);
+        }
+
         if t.starts_with('"') {
             if let Some(close) = self.find_closing_quote(t, 0) {
                 return Value::String(CompactString::from(self.unescape_string(&t[1..close])));
@@ -937,6 +975,82 @@ impl Decoder {
             parts.push(&input[seg_start..]);
         }
         parts
+    }
+
+    // --- Schema definition parsing and reference resolution ---
+
+    // Parse "s:name {inline}" or "r:name {inline}" or "sec:name {inline}"
+    pub fn parse_schema_def(&mut self, line: &str, prefix: &str) {
+        let after_prefix = &line[prefix.len() + 1..]; // skip "s:" or "r:" or "sec:"
+        let after_prefix = after_prefix.trim();
+        // Split name from definition: first non-space token is name
+        let name_end = after_prefix.find(|c: char| c.is_whitespace()).unwrap_or(after_prefix.len());
+        let name = &after_prefix[..name_end];
+        let def_str = after_prefix[name_end..].trim();
+
+        let def = if def_str.is_empty() {
+            Value::Object(SconMap::default())
+        } else {
+            self.parse_inline_value(def_str)
+        };
+
+        if let Some(dt) = DefType::from_prefix(prefix) {
+            self.registry.register(dt, name, def);
+        }
+    }
+
+    // Resolve @type:name [overrides] or @s:a | @s:b (polymorphic)
+    pub fn resolve_reference(&mut self, ref_str: &str) -> Value {
+        // Polymorphic: @s:a | @s:b
+        if ref_str.contains(" | ") {
+            let mut schemas = Vec::new();
+            for part in ref_str.split(" | ") {
+                let part = part.trim();
+                if let Some((dt, name)) = self.parse_ref_token(part) {
+                    if let Ok(resolved) = self.registry.resolve(dt, name) {
+                        schemas.push(resolved);
+                    }
+                }
+            }
+            let mut result = SconMap::default();
+            result.insert(CompactString::from("oneOf"), Value::Array(schemas));
+            return Value::Object(result);
+        }
+
+        // Simple or with overrides: @s:name {overrides}
+        let (ref_part, override_str) = if let Some(brace_pos) = ref_str.find('{') {
+            (&ref_str[..brace_pos].trim_end(), Some(&ref_str[brace_pos..]))
+        } else {
+            (&ref_str.trim_end(), None)
+        };
+
+        if let Some((dt, name)) = self.parse_ref_token(ref_part) {
+            if let Some(ovr_str) = override_str {
+                let overrides = self.parse_inline_value(ovr_str);
+                if let Ok(resolved) = self.registry.resolve_with_override(dt, name, &overrides) {
+                    return resolved;
+                }
+            } else if let Ok(resolved) = self.registry.resolve(dt, name) {
+                return resolved;
+            }
+        }
+
+        // Unresolvable reference — return as string
+        Value::String(CompactString::from(ref_str))
+    }
+
+    // Parse @type:name → (DefType, name)
+    fn parse_ref_token<'b>(&self, token: &'b str) -> Option<(DefType, &'b str)> {
+        let token = token.trim();
+        if !token.starts_with('@') { return None; }
+        let rest = &token[1..];
+        if let Some(colon_pos) = rest.find(':') {
+            let prefix = &rest[..colon_pos];
+            let name = rest[colon_pos + 1..].trim();
+            DefType::from_prefix(prefix).map(|dt| (dt, name))
+        } else {
+            None
+        }
     }
 }
 
