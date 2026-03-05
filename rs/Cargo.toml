@@ -24,7 +24,9 @@ compact_str = "0.9"
 simd-json = { version = "0.14", optional = true }
 bumpalo = "3"
 
+
 [[bin]]
 name = "scon-bench"
 path = "src/bin/bench.rs"
 required-features = ["bench"]
+

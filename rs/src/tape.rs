@@ -39,6 +39,9 @@ pub enum Node<'a> {
 
 pub struct Tape<'a> {
     pub nodes: Vec<Node<'a>>,
+    // Backing store for strings from resolved schema references (@s:name).
+    // Node::String/Key can point into these — heap buffer is stable across Vec reallocs.
+    _resolved: Vec<String>,
 }
 
 impl<'a> Tape<'a> {
@@ -153,6 +156,9 @@ pub struct TapeDecoder {
     helper: Decoder,
     indent: usize,
     indent_auto_detect: bool,
+    // Accumulates owned strings from resolved schema refs during decode;
+    // transferred to Tape._resolved so Node<'a> refs remain valid.
+    resolved_strs: Vec<String>,
 }
 
 impl TapeDecoder {
@@ -161,14 +167,20 @@ impl TapeDecoder {
             helper: Decoder::new(),
             indent: 1,
             indent_auto_detect: true,
+            resolved_strs: Vec::new(),
         }
     }
 
     pub fn decode<'a>(&mut self, input: &'a str) -> Result<Tape<'a>, String> {
+        self.resolved_strs.clear();
+
         if !input.contains('\n') && input.contains(';') {
+            // Minified — delegate to owned decoder (which handles schema defs)
             let val = Decoder::new().decode(input)?;
             return Ok(self.owned_to_tape(&val));
         }
+
+        self.prescan_schema_defs(input);
 
         let mut lines = LineIter::new(input, self.indent);
         if self.indent_auto_detect {
@@ -176,48 +188,40 @@ impl TapeDecoder {
             self.indent = lines.indent;
         }
 
-        // Estimate tape size from input length (~1 node per 15 bytes is a reasonable heuristic)
         let node_estimate = (input.len() / 15).max(16);
         let mut tape: Vec<Node<'a>> = Vec::with_capacity(node_estimate);
 
-        // Peek at first line to handle edge cases
         let first = match lines.peek_line() {
             Some(f) => f,
             None => {
                 tape.push(Node::Object(0));
-                return Ok(Tape { nodes: tape });
+                return Ok(Tape { nodes: tape, _resolved: std::mem::take(&mut self.resolved_strs) });
             }
         };
 
-        // Single line "{}"
         if first.1 == "{}" {
             lines.next_line();
             if lines.peek_line().is_none() {
                 tape.push(Node::Object(0));
-                return Ok(Tape { nodes: tape });
+                return Ok(Tape { nodes: tape, _resolved: std::mem::take(&mut self.resolved_strs) });
             }
         }
 
-        // Top-level array header without key
         if let Some(header) = self.try_array_header(first.1) {
             if header.key.is_none() {
-                lines.next_line(); // consume the header line
+                lines.next_line();
                 self.emit_array_from_header_streaming(&header, &mut lines, first.0, &mut tape)?;
-                return Ok(Tape { nodes: tape });
+                return Ok(Tape { nodes: tape, _resolved: std::mem::take(&mut self.resolved_strs) });
             }
         }
 
-        // Single line without colon = primitive
         if lines.peek_line().map_or(false, |(_, c, _)| !c.contains(':')) {
             let (_, content, _) = lines.next_line().unwrap();
-            // check if there's nothing else
             if lines.peek_line().is_none() {
                 self.emit_primitive(content, &mut tape);
-                return Ok(Tape { nodes: tape });
+                return Ok(Tape { nodes: tape, _resolved: std::mem::take(&mut self.resolved_strs) });
             }
-            // if more lines, treat as object
             self.emit_primitive(content, &mut tape);
-            // actually, reparse — this is rare edge case, fall through to object
             tape.clear();
             lines = LineIter::new(input, self.indent);
             if self.indent_auto_detect {
@@ -225,10 +229,9 @@ impl TapeDecoder {
             }
         }
 
-        // Default: top-level object
         self.emit_object_streaming(&mut lines, 0, &mut tape)?;
 
-        Ok(Tape { nodes: tape })
+        Ok(Tape { nodes: tape, _resolved: std::mem::take(&mut self.resolved_strs) })
     }
 
     // --- Single-pass object emission with stack-based depth tracking ---
@@ -715,6 +718,13 @@ impl TapeDecoder {
         if t == "[]" { tape.push(Node::Array(0)); return; }
         if t == "{}" { tape.push(Node::Object(0)); return; }
 
+        // Schema reference resolution
+        if t.starts_with("@s:") || t.starts_with("@r:") || t.starts_with("@sec:") {
+            let resolved = self.helper.resolve_reference(t);
+            self.emit_resolved_value(&resolved, tape);
+            return;
+        }
+
         if t.starts_with('"') {
             if let Some(close) = self.helper.find_closing_quote(t, 0) {
                 tape.push(Node::String(&t[1..close]));
@@ -792,11 +802,65 @@ impl TapeDecoder {
         None
     }
 
+    // Pre-scan input for schema definitions (s:/r:/sec:) and register in helper's registry
+    fn prescan_schema_defs(&mut self, input: &str) {
+        for line in input.lines() {
+            let trimmed = line.trim();
+            if trimmed.is_empty() { continue; }
+            let first = trimmed.as_bytes()[0];
+            if first == b's' && trimmed.starts_with("s:") {
+                self.helper.parse_schema_def(trimmed, "s");
+            } else if first == b'r' && trimmed.starts_with("r:") {
+                self.helper.parse_schema_def(trimmed, "r");
+            } else if trimmed.starts_with("sec:") {
+                self.helper.parse_schema_def(trimmed, "sec");
+            }
+        }
+    }
+
+    // Store a string from resolved schema and return &'a str pointing to stable heap buffer.
+    // SAFETY: String heap data doesn't move on Vec realloc; ownership transfers to Tape._resolved.
+    fn alloc_resolved<'a>(&mut self, s: &str) -> &'a str {
+        self.resolved_strs.push(s.to_string());
+        let stored = self.resolved_strs.last().unwrap();
+        unsafe { &*(stored.as_str() as *const str) }
+    }
+
+    // Emit an owned Value (from schema resolution) into the tape
+    fn emit_resolved_value<'a>(&mut self, val: &crate::Value, tape: &mut Vec<Node<'a>>) {
+        match val {
+            crate::Value::Null => tape.push(Node::Null),
+            crate::Value::Bool(b) => tape.push(Node::Bool(*b)),
+            crate::Value::Integer(i) => tape.push(Node::Integer(*i)),
+            crate::Value::Float(f) => tape.push(Node::Float(*f)),
+            crate::Value::String(s) => {
+                let borrowed: &'a str = self.alloc_resolved(s);
+                tape.push(Node::String(borrowed));
+            }
+            crate::Value::Array(arr) => {
+                let pos = tape.len();
+                tape.push(Node::Array(arr.len()));
+                for v in arr { self.emit_resolved_value(v, tape); }
+                tape[pos] = Node::Array(arr.len());
+            }
+            crate::Value::Object(obj) => {
+                let pos = tape.len();
+                tape.push(Node::Object(obj.len()));
+                for (k, v) in obj {
+                    let key: &'a str = self.alloc_resolved(k);
+                    tape.push(Node::Key(key));
+                    self.emit_resolved_value(v, tape);
+                }
+                tape[pos] = Node::Object(obj.len());
+            }
+        }
+    }
+
     // Fallback: convert owned Value to tape (for minified input)
     fn owned_to_tape(&self, val: &crate::Value) -> Tape<'static> {
         let mut nodes = Vec::new();
         self.emit_owned(val, &mut nodes);
-        Tape { nodes }
+        Tape { nodes, _resolved: Vec::new() }
     }
 
     fn emit_owned(&self, val: &crate::Value, tape: &mut Vec<Node<'static>>) {

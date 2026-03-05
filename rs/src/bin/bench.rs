@@ -15,6 +15,7 @@ use scon_core::{Encoder, Decoder, Minifier, Value, BorrowedDecoder, TapeDecoder}
 use flate2::write::GzEncoder;
 use flate2::Compression;
 
+
 // Tracking allocator — wraps System to measure peak memory per operation
 struct TrackingAlloc;
 static ALLOCATED: AtomicUsize = AtomicUsize::new(0);
@@ -122,7 +123,7 @@ fn run_benchmark(name: &str, json_str: &str, json_val: &serde_json::Value, scon_
     println!("  Input: {:.1} KB JSON", json_str.len() as f64 / 1024.0);
 
     // --- Encode ---
-    let encoder = Encoder::new();
+    let mut encoder = Encoder::new();
 
     for _ in 0..warmup {
         let _ = serde_json::to_string(json_val).unwrap();
@@ -164,7 +165,6 @@ fn run_benchmark(name: &str, json_str: &str, json_val: &serde_json::Value, scon_
     let json_pretty_gz = gzip_size(&json_pretty);
     let scon_gz = gzip_size(&scon_encoded);
     let scon_min_gz = gzip_size(&scon_minified);
-
     println!("  Payload Size:");
     println!("    JSON:             {:.1} KB (gzip: {:.1} KB)", json_encoded.len() as f64 / 1024.0, json_gz as f64 / 1024.0);
     println!("    JSON(pretty):     {:.1} KB (gzip: {:.1} KB)", json_pretty.len() as f64 / 1024.0, json_pretty_gz as f64 / 1024.0);
@@ -172,7 +172,6 @@ fn run_benchmark(name: &str, json_str: &str, json_val: &serde_json::Value, scon_
     println!("    SCON:             {:.1} KB ({:+.1}%) (gzip: {:.1} KB)", scon_encoded.len() as f64 / 1024.0, scon_pct, scon_gz as f64 / 1024.0);
     let min_pct = ((scon_minified.len() as f64 / json_encoded.len() as f64) - 1.0) * 100.0;
     println!("    SCON(min):        {:.1} KB ({:+.1}%) (gzip: {:.1} KB)", scon_minified.len() as f64 / 1024.0, min_pct, scon_min_gz as f64 / 1024.0);
-
     // --- Encoding Time ---
     println!("  Encoding Time ({} iters):", iters);
     println!("    serde_json:       {:.3}ms (p95: {:.3}ms, p99: {:.3}ms) — {} ops/s",
@@ -186,7 +185,7 @@ fn run_benchmark(name: &str, json_str: &str, json_val: &serde_json::Value, scon_
         percentile(&scon_encode_times, 99),
         ops_per_sec(&scon_encode_times));
     let encode_ratio = percentile(&scon_encode_times, 50) / percentile(&json_encode_times, 50);
-    println!("    Ratio:            {:.1}x slower", encode_ratio);
+    println!("    SCON vs serde:    {:.1}x", encode_ratio);
 
     // --- Decode ---
     for _ in 0..warmup {

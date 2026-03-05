@@ -22,6 +22,8 @@
 //     to prevent misinterpretation as primitives during decode
 
 use crate::value::{Value, SconMap};
+use crate::schema_registry::{SchemaRegistry, DefType};
+use crate::treehash::TreeHash;
 
 // Lookup tables — branch-free byte classification, L1 cache resident (256 bytes each)
 // UNSAFE_VALUE[b] = true if byte b requires quoting in a SCON value
@@ -67,11 +69,18 @@ const INDENT_SPACES: &str = "                                                   
 pub struct Encoder {
     indent: usize,
     delimiter: char,
+    auto_extract: bool,
+    registry: SchemaRegistry,
 }
 
 impl Encoder {
     pub fn new() -> Self {
-        Self { indent: 1, delimiter: ',' }
+        Self {
+            indent: 1,
+            delimiter: ',',
+            auto_extract: false,
+            registry: SchemaRegistry::new(),
+        }
     }
 
     pub fn with_indent(mut self, indent: usize) -> Self {
@@ -84,18 +93,67 @@ impl Encoder {
         self
     }
 
-    pub fn encode(&self, data: &Value) -> String {
+    pub fn with_auto_extract(mut self, enabled: bool) -> Self {
+        self.auto_extract = enabled;
+        self
+    }
+
+    pub fn with_schemas(mut self, schemas: Vec<(&str, Value)>) -> Self {
+        for (name, def) in schemas {
+            self.registry.register(DefType::Schema, name, def);
+        }
+        self
+    }
+
+    pub fn with_responses(mut self, responses: Vec<(&str, Value)>) -> Self {
+        for (name, def) in responses {
+            self.registry.register(DefType::Response, name, def);
+        }
+        self
+    }
+
+    pub fn with_security(mut self, security: Vec<(&str, Value)>) -> Self {
+        for (name, def) in security {
+            self.registry.register(DefType::Security, name, def);
+        }
+        self
+    }
+
+    pub fn encode(&mut self, data: &Value) -> String {
         let mut buf = String::with_capacity(1024);
         self.encode_to(data, &mut buf);
         buf
     }
 
     // P2.4: Write to external buffer — avoids allocation per call
-    pub fn encode_to(&self, data: &Value, buf: &mut String) {
+    pub fn encode_to(&mut self, data: &Value, buf: &mut String) {
+        // Auto-extract repeated schemas via TreeHash
+        if self.auto_extract {
+            if let Value::Object(_) | Value::Array(_) = data {
+                self.detect_repeated_schemas(data);
+            }
+        }
+
+        let has_defs = self.emit_definitions(buf);
+
         match data {
-            Value::Object(obj) if obj.is_empty() => buf.push_str("{}"),
-            Value::Array(arr) if arr.is_empty() => buf.push_str("[]"),
-            _ => self.encode_value(data, 0, buf),
+            Value::Object(obj) if obj.is_empty() => {
+                if has_defs { buf.push('\n'); }
+                buf.push_str("{}");
+            }
+            Value::Array(arr) if arr.is_empty() => {
+                if has_defs { buf.push('\n'); }
+                buf.push_str("[]");
+            }
+            _ => {
+                if has_defs { buf.push('\n'); }
+                self.encode_value(data, 0, buf);
+            }
+        }
+
+        // Prune orphan schemas: defined but never referenced in the body
+        if self.auto_extract {
+            self.prune_orphan_schemas(buf);
         }
     }
 
@@ -139,13 +197,20 @@ impl Encoder {
                 Value::Array(arr) => {
                     self.encode_array_value(Some(key), arr, depth, buf);
                 }
-                // Nested object
+                // Nested object — check for schema ref match
                 Value::Object(inner) => {
-                    self.write_indent(depth, buf);
-                    self.write_key(key, buf);
-                    buf.push(':');
-                    buf.push('\n');
-                    self.encode_object(inner, depth + 1, buf);
+                    if let Some(ref_name) = self.find_matching_schema(val) {
+                        self.write_indent(depth, buf);
+                        self.write_key(key, buf);
+                        buf.push_str(": @s:");
+                        buf.push_str(&ref_name);
+                    } else {
+                        self.write_indent(depth, buf);
+                        self.write_key(key, buf);
+                        buf.push(':');
+                        buf.push('\n');
+                        self.encode_object(inner, depth + 1, buf);
+                    }
                 }
                 _ => {}
             }
@@ -239,8 +304,14 @@ impl Encoder {
                     self.write_indent(depth + 1, buf);
                     buf.push_str("- {}");
                 }
-                Value::Object(obj) => {
-                    self.encode_object_as_list_item(obj, depth + 1, buf);
+                Value::Object(_) => {
+                    if let Some(ref_name) = self.find_matching_schema(item) {
+                        self.write_indent(depth + 1, buf);
+                        buf.push_str("- @s:");
+                        buf.push_str(&ref_name);
+                    } else if let Value::Object(obj) = item {
+                        self.encode_object_as_list_item(obj, depth + 1, buf);
+                    }
                 }
                 Value::Array(inner) if inner.is_empty() => {
                     self.write_indent(depth + 1, buf);
@@ -506,6 +577,171 @@ impl Encoder {
             }
             buf.push_str(&INDENT_SPACES[..rem]);
         }
+    }
+
+    // --- Schema / autoExtract support ---
+
+    fn detect_repeated_schemas(&mut self, data: &Value) {
+        // normalize=false: key order from source (same as PHP default in encode path)
+        let result = TreeHash::hash_tree(data, "", 2, false);
+        for entry in result.index.values() {
+            if entry.count >= 2 {
+                let name = generate_schema_name(&entry.path);
+                self.registry.register(DefType::Schema, &name, entry.data.clone());
+            }
+        }
+    }
+
+    // Emit s:/r:/sec: definitions at top of output. Returns true if any defs were emitted.
+    fn emit_definitions(&self, buf: &mut String) -> bool {
+        let mut emitted = false;
+
+        let schemas = self.registry.get_all(DefType::Schema);
+        if !schemas.is_empty() {
+            for (name, def) in schemas {
+                if emitted { buf.push('\n'); }
+                buf.push_str("s:");
+                buf.push_str(name);
+                buf.push(' ');
+                self.encode_inline(def, buf);
+                emitted = true;
+            }
+        }
+
+        let responses = self.registry.get_all(DefType::Response);
+        if !responses.is_empty() {
+            if emitted { buf.push('\n'); }
+            for (name, def) in responses {
+                if emitted { buf.push('\n'); }
+                buf.push_str("r:");
+                buf.push_str(name);
+                buf.push(' ');
+                self.encode_inline(def, buf);
+                emitted = true;
+            }
+        }
+
+        let security = self.registry.get_all(DefType::Security);
+        if !security.is_empty() {
+            if emitted { buf.push('\n'); }
+            for (name, def) in security {
+                if emitted { buf.push('\n'); }
+                buf.push_str("sec:");
+                buf.push_str(name);
+                buf.push(' ');
+                self.encode_inline(def, buf);
+                emitted = true;
+            }
+        }
+
+        emitted
+    }
+
+    // Single-line inline notation for schema definitions: {key:val, key2:val2}
+    fn encode_inline(&self, data: &Value, buf: &mut String) {
+        match data {
+            Value::Null => buf.push_str("null"),
+            Value::Bool(true) => buf.push_str("true"),
+            Value::Bool(false) => buf.push_str("false"),
+            Value::Integer(n) => {
+                let mut b = itoa::Buffer::new();
+                buf.push_str(b.format(*n));
+            }
+            Value::Float(n) => {
+                let mut b = ryu::Buffer::new();
+                buf.push_str(b.format(*n));
+            }
+            Value::String(s) => self.write_string(s, buf),
+            Value::Array(arr) => {
+                buf.push('[');
+                for (i, item) in arr.iter().enumerate() {
+                    if i > 0 { buf.push_str(", "); }
+                    self.encode_inline(item, buf);
+                }
+                buf.push(']');
+            }
+            Value::Object(obj) => {
+                buf.push('{');
+                for (i, (k, v)) in obj.iter().enumerate() {
+                    if i > 0 { buf.push_str(", "); }
+                    self.write_key(k, buf);
+                    buf.push(':');
+                    self.encode_inline(v, buf);
+                }
+                buf.push('}');
+            }
+        }
+    }
+
+    // Check if a Value matches a registered schema exactly
+    fn find_matching_schema(&self, data: &Value) -> Option<String> {
+        let schemas = self.registry.get_all(DefType::Schema);
+        for (name, def) in schemas {
+            if data == def {
+                return Some(name.to_string());
+            }
+        }
+        None
+    }
+
+    // Remove schema definitions that are never referenced in the output body
+    fn prune_orphan_schemas(&self, buf: &mut String) {
+        let schemas = self.registry.get_all(DefType::Schema);
+        if schemas.is_empty() { return; }
+
+        let mut orphans: Vec<String> = Vec::new();
+        for name in schemas.keys() {
+            let ref_marker = format!("@s:{}", name);
+            // Check if the reference appears anywhere after the definitions section
+            if !buf.contains(&ref_marker) {
+                orphans.push(format!("s:{} ", name));
+            }
+        }
+
+        if orphans.is_empty() { return; }
+
+        // Rebuild buffer without orphan definition lines
+        let lines: Vec<&str> = buf.lines().collect();
+        let mut new_buf = String::with_capacity(buf.len());
+        let mut first = true;
+        for line in lines {
+            if orphans.iter().any(|o| line.starts_with(o)) {
+                continue;
+            }
+            if !first { new_buf.push('\n'); }
+            new_buf.push_str(line);
+            first = false;
+        }
+
+        // Remove leading empty lines from pruned defs
+        let trimmed = new_buf.trim_start_matches('\n');
+        *buf = trimmed.to_string();
+    }
+}
+
+fn generate_schema_name(path: &str) -> String {
+    let parts: Vec<&str> = path.trim_matches('.').split('.').collect();
+    // Strip list indices ([0], [1]) from end
+    let meaningful: Vec<&str> = parts.iter().copied()
+        .rev()
+        .skip_while(|p| p.starts_with('[') && p.ends_with(']') && p[1..p.len()-1].parse::<usize>().is_ok())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    let last = meaningful.last().copied().unwrap_or("");
+    // Clean common path segments
+    let cleaned: String = last.replace("properties", "")
+        .replace("content", "")
+        .replace("application/json", "")
+        .replace("schema", "")
+        .trim_matches('.')
+        .to_string();
+    if cleaned.is_empty() {
+        let hash = xxhash_rust::xxh3::xxh3_128(path.as_bytes());
+        format!("auto_{:06x}", hash & 0xFFFFFF)
+    } else {
+        cleaned
     }
 }
 
